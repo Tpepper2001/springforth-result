@@ -11,6 +11,7 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
+import "jspdf-autotable";
 
 const App = () => {
   // === Authentication ===
