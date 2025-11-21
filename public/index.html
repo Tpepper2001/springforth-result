@@ -2,16 +2,77 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#1e3a8a" />
-    <meta name="description" content="SPRINGFORTH Academy - School Result Management System for generating and managing student report cards" />
+    <meta name="description" content="SPRINGFORTH Academy - School Result Management System" />
     <title>SPRINGFORTH Academy - Result Management System</title>
+
+    <!-- React & ReactDOM from CDN (for quick local testing without build) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX in-browser transformation (only needed in development/no-build setup) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 100%;
+        height: 100%;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        background-color: #f3f4f6;
+      }
+      .loading {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+        color: white;
+        font-size: 18px;
+        font-weight: 500;
+      }
+      .spinner {
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top: 4px solid white;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin-right: 15px;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
   </head>
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-    <!-- react-scripts automatically injects the correct <script> tags here during build -->
-    <!-- DO NOT add any manual <script src="..."> tags -->
+    <noscript>
+      <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#1e3a8a;color:white;text-align:center;">
+        <div>
+          <h1>SPRINGFORTH Academy</h1>
+          <p>You need to enable JavaScript to run this app.</p>
+        </div>
+      </div>
+    </noscript>
+
+    <!-- Initial loading screen (will be replaced by React) -->
+    <div id="root">
+      <div class="loading">
+        <div class="spinner"></div>
+        <div>Loading SPRINGFORTH Academy...</div>
+      </div>
+    </div>
+
+    <!-- THIS IS THE KEY LINE – points to your actual app file -->
+    <script type="text/babel" src="./src/app.js"></script>
+
+    <!-- Optional: If app.js doesn't include the render itself, add this fallback -->
+    <script type="text/babel">
+      // In case src/app.js only exports the component and doesn't render it
+      if (typeof App !== 'undefined' && document.getElementById('root').children.length > 0) {
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+      }
+    </script>
   </body>
 </html>
