@@ -1,659 +1,407 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Save, FileText, Download, X, LogOut, CheckCircle, AlertTriangle, UserPlus, LogIn } from 'lucide-react';
-// NOTE: Removed 'import jsPDF from "jspdf";' to resolve compilation error.
-// The code will now assume jsPDF and jspdf-autotable are loaded globally via script tags.
+import React, { useState, useMemo } from 'react';
+import { Page, Text, View, Document, StyleSheet, PDFViewer, Image as PDFImage, Font } from '@react-pdf/renderer';
+import { Plus, Trash2, Download, RefreshCw } from 'lucide-react';
 
-// Import necessary Firebase modules
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
-import { getDoc, addDoc } from 'firebase/firestore';
+// ==========================================
+// 1. PDF STYLES & DOCUMENT DEFINITION
+// ==========================================
 
-// --- Global Firebase Configuration Setup (Mandatory) ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+// Register a standard font (optional, using default Helvetica here for simplicity)
+// You can register custom fonts if you want specific bold weights.
 
-// Initialize Firebase App and Services (must be done only once)
-const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
-const db = app ? getFirestore(app) : null;
-const auth = app ? getAuth(app) : null;
+const styles = StyleSheet.create({
+  page: { padding: 20, fontSize: 8, fontFamily: 'Helvetica' },
+  // Header
+  headerContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5, alignItems: 'center' },
+  logoBox: { width: 60, height: 60, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' },
+  schoolInfo: { flex: 1, textAlign: 'center', marginHorizontal: 10 },
+  schoolName: { fontSize: 16, color: '#1a365d', fontWeight: 'bold', textTransform: 'uppercase' },
+  schoolAddress: { fontSize: 8, marginTop: 2, fontWeight: 'bold' },
+  schoolContact: { fontSize: 8, marginTop: 2, fontWeight: 'bold' },
+  reportTitle: { fontSize: 10, marginTop: 4, fontWeight: 'bold', textTransform: 'uppercase' },
+  photoBox: { width: 60, height: 60, border: '1px solid #ccc' },
+  
+  // Red/Blue dividers
+  redBar: { height: 2, backgroundColor: 'red', width: '100%' },
+  
+  // Student Info Grid
+  studentInfoContainer: { flexDirection: 'row', border: '1px solid #000', marginVertical: 5, backgroundColor: '#dbeafe' },
+  infoCol: { flex: 1, padding: 2 },
+  infoRow: { flexDirection: 'row', marginBottom: 2 },
+  infoLabel: { fontWeight: 'bold', width: 60 },
+  infoValue: { fontWeight: 'bold' },
 
-// Helper to define public collection path for shared app data
-const getPublicCollectionPath = (collectionName) => {
-  return `/artifacts/${appId}/public/data/${collectionName}`;
+  // Tables General
+  table: { width: '100%', borderLeft: '1px solid #000', borderTop: '1px solid #000' },
+  row: { flexDirection: 'row' },
+  cell: { borderRight: '1px solid #000', borderBottom: '1px solid #000', textAlign: 'center', padding: 2, justifyContent: 'center' },
+  headerCell: { backgroundColor: '#bfdbfe', fontWeight: 'bold' },
+  
+  // Subject Table Column Widths
+  colSn: { width: '4%' },
+  colSubject: { width: '25%', textAlign: 'left', paddingLeft: 4 },
+  colScore: { width: '6%' }, // For small scores (5%, 15%)
+  colTotal: { width: '7%', backgroundColor: '#e5e7eb' },
+  colGrade: { width: '6%' },
+  colPos: { width: '6%' },
+  colHigh: { width: '8%' },
+  colRemark: { flex: 1 },
+
+  // Grade Key & Summary
+  gradeSummarySection: { flexDirection: 'row', marginTop: 5, border: '1px solid #000' },
+  gradeKey: { padding: 2, fontSize: 7, textAlign: 'center', backgroundColor: '#eff6ff', borderBottom: '1px solid #000' },
+  
+  // Comments
+  sectionHeader: { backgroundColor: '#bfdbfe', padding: 2, border: '1px solid #000', marginTop: 5, fontWeight: 'bold', fontSize: 9 },
+  commentBox: { flexDirection: 'row', border: '1px solid #000', borderTop: 'none', minHeight: 30 },
+  commentLabel: { width: 70, backgroundColor: '#eff6ff', padding: 4, borderRight: '1px solid #000', justifyContent: 'center', fontWeight: 'bold', fontSize: 7 },
+  commentText: { flex: 1, padding: 4, fontSize: 8 },
+
+  // Behavioral
+  behaviorContainer: { flexDirection: 'row', marginTop: 5, border: '1px solid #000' },
+  behaviorLeft: { width: '65%', borderRight: '1px solid #000' },
+  behaviorRight: { width: '35%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#eff6ff' },
+  
+  // Signatures
+  footer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 },
+  signBox: { width: '40%', borderTop: '1px solid #000', paddingTop: 4, textAlign: 'center' }
+});
+
+// Helper to determine grade color/text
+const getGrade = (score) => {
+  const s = parseFloat(score);
+  if (s >= 86) return 'A*';
+  if (s >= 76) return 'A';
+  if (s >= 66) return 'B';
+  if (s >= 60) return 'C';
+  if (s >= 50) return 'D';
+  if (s >= 40) return 'E';
+  return 'F';
 };
 
-// Helper to define class-specific collection path
-const getClassDataPath = (className, collectionName) => {
-  return `${getPublicCollectionPath('classes')}/${className}/${collectionName}`;
-};
-
-// --- Custom Message Modal Component ---
-const MessageBar = ({ message, type, onClose }) => {
-  if (!message) return null;
-
-  const colorClass = type === 'success' ? 'bg-green-100 text-green-800 border-green-400' : 'bg-red-100 text-red-800 border-red-400';
-  const Icon = type === 'success' ? CheckCircle : AlertTriangle;
+const ResultPDF = ({ data }) => {
+  // Calculate aggregate stats
+  const totalScore = data.subjects.reduce((acc, sub) => acc + (parseFloat(sub.total) || 0), 0);
+  const average = (totalScore / (data.subjects.length || 1)).toFixed(1);
+  
+  // Calculate grade counts
+  const gradeCounts = { 'A*': 0, 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'E': 0, 'F': 0 };
+  data.subjects.forEach(sub => {
+    const g = getGrade(sub.total);
+    if (gradeCounts[g] !== undefined) gradeCounts[g]++;
+    else gradeCounts['F']++;
+  });
 
   return (
-    <div className={`fixed top-4 right-4 p-4 rounded-lg shadow-xl border-l-4 ${colorClass} transition-all duration-300 z-50`}>
-      <div className="flex items-center">
-        <Icon className="w-5 h-5 mr-2" />
-        <span>{message}</span>
-        <button onClick={onClose} className="ml-4 text-gray-500 hover:text-gray-700">
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
+    <Document>
+      <Page size="A4" style={styles.page}>
+        
+        {/* === HEADER === */}
+        <View style={styles.headerContainer}>
+           {/* Placeholder for Logo */}
+          <View style={styles.logoBox}><Text>LOGO</Text></View>
+          
+          <View style={styles.schoolInfo}>
+            <Text style={styles.schoolName}>{data.schoolName}</Text>
+            <Text style={styles.schoolAddress}>{data.address}</Text>
+            <Text style={styles.schoolContact}>{data.contact}</Text>
+            <Text style={styles.reportTitle}>{data.term} REPORT {data.session}</Text>
+          </View>
+
+          {/* Placeholder for Photo */}
+          <View style={styles.photoBox}>
+             {/* If you have a real image URL, use <Image src={url} /> */}
+          </View>
+        </View>
+        <View style={styles.redBar} />
+
+        {/* === STUDENT INFO === */}
+        <View style={styles.studentInfoContainer}>
+          <View style={styles.infoCol}>
+            <View style={styles.infoRow}><Text style={styles.infoLabel}>NAME:</Text><Text style={styles.infoValue}>{data.studentName}</Text></View>
+            <View style={styles.infoRow}><Text style={styles.infoLabel}>CLASS:</Text><Text style={styles.infoValue}>{data.className}</Text></View>
+          </View>
+          <View style={styles.infoCol}>
+            <View style={styles.infoRow}><Text style={styles.infoLabel}>AVG SCORE:</Text><Text style={styles.infoValue}>{average}%</Text></View>
+            <View style={styles.infoRow}><Text style={styles.infoLabel}>OVERALL:</Text><Text style={styles.infoValue}>{getGrade(average)}</Text></View>
+          </View>
+          <View style={styles.infoCol}>
+            <View style={styles.infoRow}><Text style={styles.infoLabel}>CLASS SIZE:</Text><Text style={styles.infoValue}>{data.classSize}</Text></View>
+            <View style={styles.infoRow}><Text style={styles.infoLabel}>GENDER:</Text><Text style={styles.infoValue}>{data.gender}</Text></View>
+          </View>
+        </View>
+
+        {/* === ACADEMIC TABLE === */}
+        <View style={styles.table}>
+          {/* Header Row 1 */}
+          <View style={[styles.row, styles.headerCell]}>
+            <Text style={[styles.cell, styles.colSn]}>S/N</Text>
+            <Text style={[styles.cell, styles.colSubject]}>SUBJECTS</Text>
+            <Text style={[styles.cell, styles.colScore]}>NOTE 5%</Text>
+            <Text style={[styles.cell, styles.colScore]}>CW 5%</Text>
+            <Text style={[styles.cell, styles.colScore]}>HW 5%</Text>
+            <Text style={[styles.cell, styles.colScore]}>TEST 15%</Text>
+            <Text style={[styles.cell, styles.colScore]}>CA 15%</Text>
+            <Text style={[styles.cell, styles.colTotal]}>TOTAL 100%</Text>
+            <Text style={[styles.cell, styles.colGrade]}>GRD</Text>
+            <Text style={[styles.cell, styles.colPos]}>POS</Text>
+            <Text style={[styles.cell, styles.colHigh]}>HIGH</Text>
+            <Text style={[styles.cell, styles.colRemark]}>REMARKS</Text>
+          </View>
+
+          {/* Subject Rows */}
+          {data.subjects.map((sub, index) => (
+            <View key={index} style={styles.row}>
+              <Text style={[styles.cell, styles.colSn]}>{index + 1}</Text>
+              <Text style={[styles.cell, styles.colSubject]}>{sub.name}</Text>
+              <Text style={[styles.cell, styles.colScore]}>{sub.note}</Text>
+              <Text style={[styles.cell, styles.colScore]}>{sub.cw}</Text>
+              <Text style={[styles.cell, styles.colScore]}>{sub.hw}</Text>
+              <Text style={[styles.cell, styles.colScore]}>{sub.test}</Text>
+              <Text style={[styles.cell, styles.colScore]}>{sub.ca}</Text>
+              <Text style={[styles.cell, styles.colTotal, {fontWeight:'bold'}]}>{sub.total}</Text>
+              <Text style={[styles.cell, styles.colGrade]}>{getGrade(sub.total)}</Text>
+              <Text style={[styles.cell, styles.colPos]}>{sub.position}</Text>
+              <Text style={[styles.cell, styles.colHigh]}>{sub.highest}</Text>
+              <Text style={[styles.cell, styles.colRemark]}>{sub.remarks}</Text>
+            </View>
+          ))}
+          
+          {/* Totals Row */}
+          <View style={[styles.row, {backgroundColor: '#e5e7eb', fontWeight:'bold'}]}>
+             <Text style={[styles.cell, {flex:1, textAlign:'right', paddingRight: 10}]}>
+               TOTAL SCORE: {totalScore.toFixed(1)}   |   NO OF SUBJECTS: {data.subjects.length}
+             </Text>
+          </View>
+        </View>
+
+        {/* === GRADE KEY === */}
+        <Text style={styles.gradeKey}>
+          86-100 (A*) Excellent, 76-85 (A) Outstanding, 66-75 (B) Very Good, 60-65 (C) Good, 50-59 (D) Fairly Good, 40-49 (E) Below, 0-39 (F) Fail
+        </Text>
+
+        {/* === GRADE SUMMARY TABLE === */}
+        <View style={styles.table}>
+            <View style={[styles.row, styles.headerCell]}>
+               <Text style={[styles.cell, {flex:1}]}>GRADE SUMMARY</Text>
+            </View>
+            <View style={styles.row}>
+               {Object.keys(gradeCounts).map((g) => (
+                 <Text key={g} style={[styles.cell, {flex:1}]}>{g}</Text>
+               ))}
+            </View>
+            <View style={styles.row}>
+               {Object.values(gradeCounts).map((c, i) => (
+                 <Text key={i} style={[styles.cell, {flex:1}]}>{c}</Text>
+               ))}
+            </View>
+        </View>
+
+        {/* === COMMENTS === */}
+        <View style={styles.sectionHeader}><Text style={{textAlign:'center'}}>COMMENTS</Text></View>
+        
+        <View style={styles.commentBox}>
+           <Text style={styles.commentLabel}>FORM TUTOR'S COMMENT</Text>
+           <Text style={styles.commentText}>{data.tutorComment}</Text>
+        </View>
+        <View style={styles.commentBox}>
+           <Text style={styles.commentLabel}>PRINCIPAL'S COMMENT</Text>
+           <Text style={styles.commentText}>{data.principalComment}</Text>
+        </View>
+
+        {/* === BEHAVIORAL REPORT === */}
+        <View style={styles.sectionHeader}><Text style={{textAlign:'center'}}>STUDENTS BEHAVIOURAL REPORT</Text></View>
+        <View style={styles.behaviorContainer}>
+           <View style={styles.behaviorLeft}>
+              <View style={[styles.row, styles.headerCell]}>
+                 <Text style={[styles.cell, {width:'40%', textAlign:'left'}]}>BEHAVIOURAL TRAITS</Text>
+                 <Text style={[styles.cell, {width:'10%'}]}>5</Text>
+                 <Text style={[styles.cell, {width:'10%'}]}>4</Text>
+                 <Text style={[styles.cell, {width:'10%'}]}>3</Text>
+                 <Text style={[styles.cell, {width:'10%'}]}>2</Text>
+                 <Text style={[styles.cell, {width:'10%'}]}>1</Text>
+                 <Text style={[styles.cell, {width:'10%'}]}>REMARKS</Text>
+              </View>
+              {data.behaviors.map((b, i) => (
+                 <View key={i} style={styles.row}>
+                    <Text style={[styles.cell, {width:'40%', textAlign:'left'}]}>{b.trait}</Text>
+                    <Text style={[styles.cell, {width:'10%'}]}>{b.rating === 5 ? '✓' : ''}</Text>
+                    <Text style={[styles.cell, {width:'10%'}]}>{b.rating === 4 ? '✓' : ''}</Text>
+                    <Text style={[styles.cell, {width:'10%'}]}>{b.rating === 3 ? '✓' : ''}</Text>
+                    <Text style={[styles.cell, {width:'10%'}]}>{b.rating === 2 ? '✓' : ''}</Text>
+                    <Text style={[styles.cell, {width:'10%'}]}>{b.rating === 1 ? '✓' : ''}</Text>
+                    <Text style={[styles.cell, {width:'10%'}]}>
+                        {b.rating === 5 ? 'Excellent' : b.rating === 4 ? 'V. Good' : 'Good'}
+                    </Text>
+                 </View>
+              ))}
+           </View>
+           <View style={styles.behaviorRight}>
+               <Text style={{fontWeight:'bold', fontSize: 10, marginBottom: 10}}>SUMMARY OF RATING</Text>
+               <Text style={{fontSize: 24, fontWeight: 'bold', color: 'red'}}>
+                  {Math.round(data.behaviors.reduce((acc, curr) => acc + (curr.rating * 20), 0) / data.behaviors.length)}%
+               </Text>
+               <Text style={{marginTop: 5}}>Excellent Degree</Text>
+           </View>
+        </View>
+
+        {/* === FOOTER === */}
+        <View style={styles.footer}>
+           <View style={styles.signBox}>
+              <Text>{data.formTutorName}</Text>
+              <Text style={{fontSize: 6}}>FORM TUTOR</Text>
+           </View>
+           <View style={styles.signBox}>
+              <Text>{data.principalName}</Text>
+              <Text style={{fontSize: 6}}>ACTING PRINCIPAL</Text>
+           </View>
+        </View>
+
+      </Page>
+    </Document>
   );
 };
 
+// ==========================================
+// 2. MAIN APP COMPONENT (INPUT FORM)
+// ==========================================
 
-// --- Main App Component ---
 const App = () => {
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [currentTeacher, setCurrentTeacher] = useState(null);
-  const [teachers, setTeachers] = useState([]); // Used for login/signup lookup only
-  const [students, setStudents] = useState([]);
-  const [subjects, setSubjects] = useState([]); // Class subjects, array of strings
-  const [isLoading, setIsLoading] = useState(true);
+  const [data, setData] = useState({
+    schoolName: 'THE CAVENDISH COLLEGE',
+    address: '26 KINSHASA ROAD, OPPOSITE INEC OFFICE U/RIMI KADUNA',
+    contact: 'PHONE: 08144939839, EMAIL: thecavendishc@gmail.com',
+    term: 'TERM ONE',
+    session: '2025/2026',
+    studentName: 'SANDAH AHMADU USMAN',
+    className: 'YEAR 12 RIGEL',
+    classSize: '24',
+    gender: 'M',
+    tutorComment: 'Usman consistently displays a performance that is outstanding.',
+    principalComment: 'An adequate understanding of the overall objectives.',
+    formTutorName: 'PRINCE UKPELE EYIMOGA',
+    principalName: 'CHARITY IDEHEN',
+    subjects: [
+      { name: 'BIOLOGY', note: 5, cw: 5, hw: 5, test: 15, ca: 15, total: 95, position: '4th', highest: 98, remarks: 'Very Good' },
+      { name: 'CHEMISTRY', note: 4, cw: 4, hw: 4, test: 12, ca: 10, total: 78, position: '2nd', highest: 88, remarks: 'Good' },
+    ],
+    behaviors: [
+       { trait: 'RESPECT', rating: 5 },
+       { trait: 'RESPONSIBILITY', rating: 5 },
+       { trait: 'EMPATHY', rating: 4 },
+       { trait: 'SELF DISCIPLINE', rating: 4 },
+       { trait: 'COOPERATION', rating: 5 },
+       { trait: 'LEADERSHIP', rating: 4 },
+       { trait: 'HONESTY', rating: 5 },
+    ]
+  });
 
-  // Form States
-  const [loginData, setLoginData] = useState({ email: "", password: "" });
-  const [signupData, setSignupData] = useState({ name: "", email: "", password: "", className: "" });
-  const [newStudentName, setNewStudentName] = useState("");
-  const [newSubject, setNewSubject] = useState("");
-
-  // Message State (replaces alert)
-  const [message, setMessage] = useState({ text: '', type: '' });
-
-  const showMessage = (text, type = 'error') => {
-    setMessage({ text, type });
-    setTimeout(() => setMessage({ text: '', type: '' }), 4000);
+  const handleSchoolChange = (e) => setData({...data, [e.target.name]: e.target.value});
+  
+  const updateSubject = (index, field, value) => {
+    const newSubjects = [...data.subjects];
+    newSubjects[index][field] = value;
+    // Auto calc total
+    if (['note', 'cw', 'hw', 'test', 'ca'].includes(field)) {
+        const s = newSubjects[index];
+        const total = (parseFloat(s.note)||0) + (parseFloat(s.cw)||0) + (parseFloat(s.hw)||0) + (parseFloat(s.test)||0) + (parseFloat(s.ca)||0) + 40; // Assuming Exam is remainder? 
+        // Based on screenshot, colums add up to ~45. There is an implicit exam score or the formula is different.
+        // For this demo, let's just sum what is there.
+        newSubjects[index].total = (parseFloat(s.note)||0) + (parseFloat(s.cw)||0) + (parseFloat(s.hw)||0) + (parseFloat(s.test)||0) + (parseFloat(s.ca)||0);
+        // Usually there is an Exam column (60%). If not, the input should include it.
+    }
+    setData({...data, subjects: newSubjects});
   };
 
-  // --------------------
-  // FIREBASE INIT & AUTH
-  // --------------------
-
-  useEffect(() => {
-    if (!auth || !db) return;
-
-    // 1. Initial Authentication
-    const authenticate = async () => {
-      try {
-        if (initialAuthToken) {
-          await signInWithCustomToken(auth, initialAuthToken);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (e) {
-        console.error("Firebase Auth Error:", e);
-      }
-    };
-
-    // 2. Set up Auth State Listener
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // If user logs in/signs up, currentTeacher is set by those handlers
-      }
-      setIsAuthReady(true);
-      setIsLoading(false);
-    });
-
-    authenticate();
-    return () => unsubscribe();
-  }, []);
-
-  // --------------------
-  // FIREBASE DATA LISTENERS
-  // --------------------
-
-  // Listener for the global teachers list (used for auth lookups)
-  useEffect(() => {
-    if (!db || !isAuthReady) return;
-
-    const teachersRef = collection(db, getPublicCollectionPath('teachers'));
-    const unsubscribe = onSnapshot(teachersRef, (snapshot) => {
-      const teacherList = snapshot.docs.map(doc => ({ ...doc.data(), uid: doc.id }));
-      setTeachers(teacherList);
-
-      // If a user is logged in via Firebase Auth, check if they exist in the teachers list
-      if (auth?.currentUser) {
-        const loggedInTeacher = teacherList.find(t => t.uid === auth.currentUser.uid);
-        if (loggedInTeacher) {
-          setCurrentTeacher(loggedInTeacher);
-        } else {
-          // Fallback if auth is ready but teacher data is missing (e.g., initial anonymous sign-in)
-          setCurrentTeacher(null);
-        }
-      }
-    }, (error) => console.error("Error fetching teachers:", error));
-
-    return () => unsubscribe();
-  }, [isAuthReady]);
-
-  // Listener for Class-specific Students and Subjects
-  useEffect(() => {
-    if (!db || !currentTeacher || !currentTeacher.className) {
-      setStudents([]);
-      setSubjects([]);
-      return;
-    }
-
-    const cls = currentTeacher.className;
-
-    // A. Students Listener
-    const studentsRef = collection(db, getClassDataPath(cls, 'students'));
-    const studentsUnsubscribe = onSnapshot(studentsRef, (snapshot) => {
-      setStudents(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
-    }, (error) => console.error("Error fetching students:", error));
-
-    // B. Subjects Listener (Subjects are stored in a single document)
-    const subjectsDocRef = doc(db, getClassDataPath(cls, 'subjects'), 'list');
-    const subjectsUnsubscribe = onSnapshot(subjectsDocRef, (docSnap) => {
-      setSubjects(docSnap.exists() ? docSnap.data().names || [] : []);
-    }, (error) => console.error("Error fetching subjects:", error));
-
-    return () => {
-      studentsUnsubscribe();
-      subjectsUnsubscribe();
-    };
-  }, [currentTeacher]);
-
-
-  // --------------------
-  // AUTH HANDLERS
-  // --------------------
-
-  const handleLogin = async () => {
-    const teacher = teachers.find(
-      (t) => t.email === loginData.email && t.password === loginData.password
-    );
-
-    if (teacher) {
-      // In a real app, this would use email/password auth.
-      // Here, we simulate linking the found teacher to the current authenticated user (if anonymous)
-      // or simply rely on the teachers array lookup.
-      setCurrentTeacher(teacher);
-      showMessage(`Welcome back, ${teacher.name}!`, 'success');
-    } else {
-      showMessage("Invalid credentials. Please check email and password.", 'error');
-    }
+  const addSubject = () => {
+    setData({...data, subjects: [...data.subjects, { name: '', note: 0, cw: 0, hw: 0, test: 0, ca: 0, total: 0, position: '', highest: 0, remarks: '' }]});
   };
 
-  const handleSignup = async () => {
-    if (!signupData.name || !signupData.email || !signupData.password || !signupData.className) {
-      showMessage("All fields are required for sign-up.", 'error');
-      return;
-    }
-
-    const existingTeacher = teachers.find((t) => t.email === signupData.email);
-    if (existingTeacher) {
-      showMessage("This email is already registered.", 'error');
-      return;
-    }
-
-    try {
-      const newUser = await signInAnonymously(auth); // Sign up a new user via anonymous auth for UID
-      const newTeacherData = {
-        name: signupData.name,
-        email: signupData.email,
-        password: signupData.password, // WARNING: Plain text storage for demo ONLY
-        className: signupData.className,
-        uid: newUser.user.uid,
-      };
-
-      // Store teacher data in the public teachers collection
-      const teacherDocRef = doc(db, getPublicCollectionPath('teachers'), newUser.user.uid);
-      await setDoc(teacherDocRef, newTeacherData);
-
-      setCurrentTeacher(newTeacherData);
-      showMessage(`Account created for ${newTeacherData.name}. Welcome!`, 'success');
-    } catch (e) {
-      console.error("Signup failed:", e);
-      showMessage("Signup failed. Please try again.", 'error');
-    }
+  const removeSubject = (index) => {
+    const newSubjects = [...data.subjects];
+    newSubjects.splice(index, 1);
+    setData({...data, subjects: newSubjects});
   };
-
-  const handleLogout = async () => {
-    if (auth && auth.currentUser) {
-      await signOut(auth); // Clear Firebase session
-      // Re-sign in anonymously so the next session can still save data
-      await signInAnonymously(auth);
-    }
-    setCurrentTeacher(null);
-    setStudents([]);
-    setSubjects([]);
-    showMessage("Logged out successfully.", 'success');
-  };
-
-  // --------------------
-  // SUBJECT HANDLERS
-  // --------------------
-  const addSubject = async () => {
-    if (!newSubject.trim()) return;
-    const cls = currentTeacher.className;
-    const newSubTrimmed = newSubject.trim();
-
-    if (subjects.includes(newSubTrimmed)) {
-      showMessage("Subject already exists in this class.", 'error');
-      return;
-    }
-
-    try {
-      const subjectsDocRef = doc(db, getClassDataPath(cls, 'subjects'), 'list');
-      await setDoc(subjectsDocRef, { names: [...subjects, newSubTrimmed] }, { merge: true });
-      setNewSubject("");
-      showMessage(`Subject "${newSubTrimmed}" added.`, 'success');
-
-      // Add the new subject field to existing students (with initial score of 0)
-      const studentsToUpdate = students.map(st => ({
-        id: st.id,
-        scores: { ...st.scores, [newSubTrimmed]: 0 }
-      }));
-
-      for (const st of studentsToUpdate) {
-        const studentDocRef = doc(db, getClassDataPath(cls, 'students'), st.id);
-        await updateDoc(studentDocRef, { scores: st.scores });
-      }
-
-    } catch (e) {
-      console.error("Error adding subject:", e);
-      showMessage("Failed to add subject.", 'error');
-    }
-  };
-
-  const removeSubject = async (sub) => {
-    const cls = currentTeacher.className;
-    const updatedSubjects = subjects.filter((s) => s !== sub);
-
-    try {
-      // 1. Update Subjects List
-      const subjectsDocRef = doc(db, getClassDataPath(cls, 'subjects'), 'list');
-      await setDoc(subjectsDocRef, { names: updatedSubjects });
-
-      // 2. Remove score field from all students in this class
-      for (const st of students) {
-        // eslint-disable-next-line no-unused-vars
-        const { [sub]: removedScore, ...remainingScores } = st.scores;
-        const studentDocRef = doc(db, getClassDataPath(cls, 'students'), st.id);
-        await updateDoc(studentDocRef, { scores: remainingScores });
-      }
-
-      showMessage(`Subject "${sub}" removed successfully.`, 'success');
-    } catch (e) {
-      console.error("Error removing subject:", e);
-      showMessage("Failed to remove subject.", 'error');
-    }
-  };
-
-  // --------------------
-  // STUDENT HANDLERS
-  // --------------------
-  const addStudent = async () => {
-    if (!newStudentName.trim()) return;
-    const cls = currentTeacher.className;
-    const studentNameTrimmed = newStudentName.trim();
-
-    if (students.some(s => s.name === studentNameTrimmed)) {
-      showMessage("A student with this name already exists.", 'error');
-      return;
-    }
-
-    // Initialize scores for all current subjects
-    const initialScores = subjects.reduce((acc, sub) => ({ ...acc, [sub]: 0 }), {});
-
-    const studentToAdd = {
-      name: studentNameTrimmed,
-      className: cls,
-      scores: initialScores,
-    };
-
-    try {
-      const studentsRef = collection(db, getClassDataPath(cls, 'students'));
-      await addDoc(studentsRef, studentToAdd);
-      setNewStudentName("");
-      showMessage(`Student "${studentNameTrimmed}" added.`, 'success');
-    } catch (e) {
-      console.error("Error adding student:", e);
-      showMessage("Failed to add student.", 'error');
-    }
-  };
-
-  const removeStudent = async (studentId, studentName) => {
-    const cls = currentTeacher.className;
-    try {
-      const studentDocRef = doc(db, getClassDataPath(cls, 'students'), studentId);
-      await deleteDoc(studentDocRef);
-      showMessage(`Student "${studentName}" removed.`, 'success');
-    } catch (e) {
-      console.error("Error removing student:", e);
-      showMessage("Failed to remove student.", 'error');
-    }
-  };
-
-  const handleScoreChange = async (studentId, subject, value) => {
-    const cls = currentTeacher.className;
-    const score = Number(value);
-    if (isNaN(score) || score < 0 || score > 100) return; // Basic validation (0-100)
-
-    // Optimistic UI update (using the listener will correct if save fails)
-    setStudents(prevStudents => prevStudents.map(s =>
-      s.id === studentId
-        ? { ...s, scores: { ...s.scores, [subject]: score } }
-        : s
-    ));
-
-    try {
-      const studentDocRef = doc(db, getClassDataPath(cls, 'students'), studentId);
-      await updateDoc(studentDocRef, { [`scores.${subject}`]: score });
-    } catch (e) {
-      console.error("Error updating score:", e);
-      showMessage("Failed to update score. Please try again.", 'error');
-    }
-  };
-
-  // --------------------
-  // REPORT HANDLERS
-  // --------------------
-  const calculateAverage = (scores) => {
-    const definedScores = Object.values(scores).filter(s => s !== undefined && s !== null && s !== "");
-    if (definedScores.length === 0) return 0;
-    const sum = definedScores.reduce((acc, score) => acc + Number(score), 0);
-    return (sum / definedScores.length).toFixed(1);
-  };
-
-  const downloadPDF = () => {
-    // Check for global availability of jsPDF (due to removed import)
-    if (typeof window.jsPDF === 'undefined' || typeof window.jsPDF.prototype.autoTable === 'undefined') {
-      showMessage("PDF generation libraries are not available. Please ensure jspdf and jspdf-autotable are loaded in the environment.", 'error');
-      return;
-    }
-    
-    const cls = currentTeacher.className;
-    const doc = new window.jsPDF(); // Use global reference
-    let y = 15;
-
-    doc.setFontSize(18);
-    doc.text(`Springforth School Result Sheet`, 105, y, { align: 'center' });
-    y += 8;
-    doc.setFontSize(14);
-    doc.text(`Teacher: ${currentTeacher.name} | Class: ${cls}`, 105, y, { align: 'center' });
-    y += 12;
-
-    const headers = ["Name", ...subjects, "Avg."];
-    const data = students.map(st => {
-      const studentScores = subjects.map(sub => st.scores[sub] || 0);
-      const avg = calculateAverage(st.scores);
-      return [st.name, ...studentScores, avg];
-    });
-
-    doc.autoTable({
-      startY: y,
-      head: [headers],
-      body: data,
-      theme: 'grid',
-      styles: { fontSize: 10, cellPadding: 2, overflow: 'linebreak' },
-      headStyles: { fillColor: [44, 62, 80], textColor: [255, 255, 255] },
-      margin: { top: 10, left: 10, right: 10, bottom: 10 },
-    });
-
-    doc.save(`Springforth_Class_${cls}_Results.pdf`);
-  };
-
-  const downloadCSV = () => {
-    const cls = currentTeacher.className;
-    const headers = ["Name", ...subjects, "Average"];
-    let csv = headers.join(",") + "\n";
-
-    students.forEach((st) => {
-      const studentScores = subjects.map((sub) => st.scores[sub] || 0);
-      const avg = calculateAverage(st.scores);
-      csv += [st.name, ...studentScores, avg].join(",") + "\n";
-    });
-
-    const blob = new Blob([csv], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `Springforth_Class_${cls}_Results.csv`;
-    a.click();
-  };
-
-  // --------------------
-  // RENDER UI
-  // --------------------
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-xl font-semibold text-gray-600">Loading Application...</div>
-      </div>
-    );
-  }
-
-  // --- Auth Screens ---
-  if (!currentTeacher) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <MessageBar message={message.text} type={message.type} onClose={() => setMessage({ text: '', type: '' })} />
-        <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-2xl space-y-8">
-          <h1 className="text-3xl font-extrabold text-center text-indigo-700">Springforth Management</h1>
-          <p className="text-center text-gray-500">
-            Use the same credentials across sessions.
-          </p>
-
-          {/* Login Form */}
-          <div className="space-y-4 border-b pb-6">
-            <h2 className="text-2xl font-bold text-gray-700 flex items-center"><LogIn className="w-6 h-6 mr-2 text-indigo-500" />Teacher Login</h2>
-            <input
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="Email"
-              value={loginData.email}
-              onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
-            />
-            <input
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-              type="password"
-              placeholder="Password"
-              value={loginData.password}
-              onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
-            />
-            <button
-              onClick={handleLogin}
-              className="w-full bg-indigo-600 text-white p-3 rounded-lg font-semibold hover:bg-indigo-700 transition duration-150 shadow-lg"
-            >
-              Login
-            </button>
-          </div>
-
-          {/* Sign Up Form */}
-          <div className="space-y-4 pt-6">
-            <h2 className="text-2xl font-bold text-gray-700 flex items-center"><UserPlus className="w-6 h-6 mr-2 text-pink-500" />New Teacher Sign Up</h2>
-            <input
-              className="w-full p-3 border border-gray-300 rounded-lg"
-              placeholder="Full Name"
-              value={signupData.name}
-              onChange={(e) => setSignupData({ ...signupData, name: e.target.value })}
-            />
-            <input
-              className="w-full p-3 border border-gray-300 rounded-lg"
-              placeholder="Email"
-              value={signupData.email}
-              onChange={(e) => setSignupData({ ...signupData, email: e.target.value })}
-            />
-            <input
-              className="w-full p-3 border border-gray-300 rounded-lg"
-              type="password"
-              placeholder="Password"
-              value={signupData.password}
-              onChange={(e) => setSignupData({ ...signupData, password: e.target.value })}
-            />
-            <input
-              className="w-full p-3 border border-gray-300 rounded-lg"
-              placeholder="Class Name (e.g., Year 10, Class 5A)"
-              value={signupData.className}
-              onChange={(e) => setSignupData({ ...signupData, className: e.target.value })}
-            />
-            <button
-              onClick={handleSignup}
-              className="w-full bg-pink-500 text-white p-3 rounded-lg font-semibold hover:bg-pink-600 transition duration-150 shadow-lg"
-            >
-              Sign Up
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Main App Screen ---
-  const cls = currentTeacher.className;
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-8 font-sans">
-      <MessageBar message={message.text} type={message.type} onClose={() => setMessage({ text: '', type: '' })} />
+    <div className="min-h-screen bg-gray-100 p-8 font-sans">
+      <div className="max-w-6xl mx-auto bg-white shadow-xl rounded-lg overflow-hidden flex flex-col lg:flex-row">
+        
+        {/* === LEFT: EDITOR FORM === */}
+        <div className="w-full lg:w-1/2 p-6 overflow-y-auto h-screen">
+          <h2 className="text-2xl font-bold mb-6 text-gray-800 flex items-center gap-2">
+            <RefreshCw className="w-6 h-6"/> Report Card Generator
+          </h2>
+          
+          <div className="space-y-6">
+            {/* School Info */}
+            <section className="bg-blue-50 p-4 rounded-md">
+                <h3 className="font-bold text-blue-800 mb-2">School Details</h3>
+                <input name="schoolName" value={data.schoolName} onChange={handleSchoolChange} className="w-full p-2 mb-2 border rounded" placeholder="School Name" />
+                <input name="address" value={data.address} onChange={handleSchoolChange} className="w-full p-2 mb-2 border rounded" placeholder="Address" />
+                <input name="term" value={data.term} onChange={handleSchoolChange} className="w-1/2 p-2 mb-2 border rounded mr-2" placeholder="Term" />
+                <input name="session" value={data.session} onChange={handleSchoolChange} className="w-1/3 p-2 mb-2 border rounded" placeholder="Session" />
+            </section>
 
-      <header className="flex justify-between items-center mb-8 pb-4 border-b-2 border-indigo-200">
-        <div>
-          <h1 className="text-3xl font-extrabold text-indigo-700">Class Results Dashboard</h1>
-          <p className="text-lg text-gray-600 mt-1">
-            Welcome, <span className="font-semibold text-indigo-600">{currentTeacher.name}</span> (Managing Class <span className="font-bold text-indigo-600">{cls}</span>)
-          </p>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="flex items-center bg-red-500 text-white px-4 py-2 rounded-full font-medium hover:bg-red-600 transition shadow-md"
-        >
-          <LogOut className="w-4 h-4 mr-2" /> Logout
-        </button>
-      </header>
+            {/* Student Info */}
+            <section className="bg-green-50 p-4 rounded-md">
+                <h3 className="font-bold text-green-800 mb-2">Student Details</h3>
+                <div className="grid grid-cols-2 gap-2">
+                    <input name="studentName" value={data.studentName} onChange={handleSchoolChange} className="p-2 border rounded" placeholder="Name" />
+                    <input name="className" value={data.className} onChange={handleSchoolChange} className="p-2 border rounded" placeholder="Class" />
+                    <input name="classSize" value={data.classSize} onChange={handleSchoolChange} className="p-2 border rounded" placeholder="Class Size" />
+                    <input name="gender" value={data.gender} onChange={handleSchoolChange} className="p-2 border rounded" placeholder="Gender" />
+                </div>
+            </section>
 
-      <main className="space-y-10">
-
-        {/* Subjects Management */}
-        <section className="bg-white p-6 rounded-xl shadow-lg">
-          <h2 className="text-2xl font-bold text-gray-700 mb-4 border-b pb-2">1. Subjects for Class {cls}</h2>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {subjects.map((sub) => (
-              <span key={sub} className="inline-flex items-center px-3 py-1 bg-indigo-100 text-indigo-800 text-sm font-medium rounded-full shadow-sm">
-                {sub}
-                <X className="w-4 h-4 ml-2 cursor-pointer hover:text-red-600 transition" onClick={() => removeSubject(sub)} />
-              </span>
-            ))}
-          </div>
-          <div className="flex space-x-3">
-            <input
-              className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="Enter new subject name (e.g., Physics, History)"
-              value={newSubject}
-              onChange={(e) => setNewSubject(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addSubject()}
-            />
-            <button
-              onClick={addSubject}
-              className="bg-indigo-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-indigo-600 transition shadow-md whitespace-nowrap"
-            >
-              Add Subject
-            </button>
-          </div>
-        </section>
-
-        {/* Student Data Table */}
-        <section className="bg-white p-6 rounded-xl shadow-lg overflow-x-auto">
-          <h2 className="text-2xl font-bold text-gray-700 mb-4 border-b pb-2">2. Student Scores</h2>
-
-          {/* Add Student Form */}
-          <div className="flex space-x-3 mb-6">
-            <input
-              className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="Enter new student name"
-              value={newStudentName}
-              onChange={(e) => setNewStudentName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addStudent()}
-            />
-            <button
-              onClick={addStudent}
-              className="bg-green-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-600 transition shadow-md whitespace-nowrap"
-            >
-              Add Student
-            </button>
-          </div>
-
-          <table className="min-w-full bg-white border-collapse rounded-lg overflow-hidden">
-            <thead className="bg-gray-200">
-              <tr>
-                <th className="p-3 text-left text-sm font-semibold text-gray-600">Name</th>
-                {subjects.map((sub) => (
-                  <th key={sub} className="p-3 text-center text-sm font-semibold text-gray-600">{sub}</th>
+            {/* Subjects */}
+            <section>
+                <div className="flex justify-between items-center mb-2">
+                   <h3 className="font-bold text-gray-700">Subjects</h3>
+                   <button onClick={addSubject} className="flex items-center gap-1 text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"><Plus size={16}/> Add</button>
+                </div>
+                {data.subjects.map((sub, i) => (
+                    <div key={i} className="mb-2 p-2 border rounded bg-gray-50 flex flex-wrap gap-2 items-center">
+                        <span className="text-xs text-gray-500 w-4">{i+1}</span>
+                        <input value={sub.name} onChange={(e)=>updateSubject(i,'name',e.target.value)} placeholder="Subject" className="flex-1 min-w-[120px] p-1 border rounded" />
+                        <input type="number" value={sub.total} onChange={(e)=>updateSubject(i,'total',e.target.value)} placeholder="Total" className="w-16 p-1 border rounded text-center font-bold" />
+                        <input value={sub.remarks} onChange={(e)=>updateSubject(i,'remarks',e.target.value)} placeholder="Remark" className="w-24 p-1 border rounded" />
+                        <button onClick={()=>removeSubject(i)} className="text-red-500 hover:bg-red-100 p-1 rounded"><Trash2 size={16}/></button>
+                        
+                        {/* Expandable details if needed, simplified here */}
+                        <div className="w-full flex gap-1 mt-1">
+                            <input placeholder="Note" className="w-1/6 text-xs p-1 border" value={sub.note} onChange={(e)=>updateSubject(i,'note',e.target.value)}/>
+                            <input placeholder="CW" className="w-1/6 text-xs p-1 border" value={sub.cw} onChange={(e)=>updateSubject(i,'cw',e.target.value)}/>
+                            <input placeholder="HW" className="w-1/6 text-xs p-1 border" value={sub.hw} onChange={(e)=>updateSubject(i,'hw',e.target.value)}/>
+                            <input placeholder="Test" className="w-1/6 text-xs p-1 border" value={sub.test} onChange={(e)=>updateSubject(i,'test',e.target.value)}/>
+                            <input placeholder="CA" className="w-1/6 text-xs p-1 border" value={sub.ca} onChange={(e)=>updateSubject(i,'ca',e.target.value)}/>
+                        </div>
+                    </div>
                 ))}
-                <th className="p-3 text-center text-sm font-semibold text-gray-600">Average</th>
-                <th className="p-3 text-center text-sm font-semibold text-gray-600">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {students.length === 0 ? (
-                <tr>
-                  <td colSpan={subjects.length + 3} className="p-4 text-center text-gray-500">
-                    No students found. Add one above!
-                  </td>
-                </tr>
-              ) : (
-                students.map((st, index) => (
-                  <tr key={st.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-indigo-50 transition duration-150`}>
-                    <td className="p-3 font-medium text-gray-900 border-t">{st.name}</td>
-                    {subjects.map((sub) => (
-                      <td key={sub} className="p-3 text-center border-t">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          className="w-20 p-1 border border-gray-300 rounded-md text-center focus:ring-indigo-500 focus:border-indigo-500"
-                          value={st.scores[sub] === undefined ? "" : st.scores[sub]}
-                          onChange={(e) => handleScoreChange(st.id, sub, e.target.value)}
-                        />
-                      </td>
-                    ))}
-                    <td className="p-3 text-center font-bold text-indigo-600 border-t">
-                      {calculateAverage(st.scores)}
-                    </td>
-                    <td className="p-3 text-center border-t">
-                      <button
-                        onClick={() => removeStudent(st.id, st.name)}
-                        className="text-red-500 hover:text-red-700 p-2 rounded-full transition"
-                        title="Delete Student"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </section>
-
-        {/* Reports */}
-        <section className="bg-white p-6 rounded-xl shadow-lg">
-          <h2 className="text-2xl font-bold text-gray-700 mb-4 border-b pb-2">3. Generate Reports</h2>
-          <p className="text-gray-600 mb-4">Export the current class results into PDF or CSV format.</p>
-          <div className="flex flex-wrap gap-4">
-            <button
-              onClick={downloadPDF}
-              className="flex items-center bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition shadow-lg"
-            >
-              <FileText className="w-5 h-5 mr-2" /> Download PDF Report
-            </button>
-            <button
-              onClick={downloadCSV}
-              className="flex items-center bg-yellow-500 text-gray-800 px-6 py-3 rounded-lg font-semibold hover:bg-yellow-600 transition shadow-lg"
-            >
-              <Download className="w-5 h-5 mr-2" /> Download CSV Data
-            </button>
+            </section>
+            
+            {/* Comments */}
+             <section className="bg-yellow-50 p-4 rounded-md">
+                <h3 className="font-bold text-yellow-800 mb-2">Comments</h3>
+                <textarea name="tutorComment" value={data.tutorComment} onChange={handleSchoolChange} className="w-full p-2 mb-2 border rounded h-20" placeholder="Tutor Comment" />
+                <textarea name="principalComment" value={data.principalComment} onChange={handleSchoolChange} className="w-full p-2 mb-2 border rounded h-20" placeholder="Principal Comment" />
+            </section>
           </div>
-        </section>
+        </div>
 
-      </main>
+        {/* === RIGHT: PDF PREVIEW === */}
+        <div className="w-full lg:w-1/2 bg-gray-700 p-4 h-screen flex flex-col">
+          <div className="flex justify-between items-center text-white mb-4">
+             <h3 className="font-bold">Live Preview</h3>
+          </div>
+          <div className="flex-1 bg-white rounded-lg overflow-hidden">
+             <PDFViewer width="100%" height="100%" className="border-none">
+                 <ResultPDF data={data} />
+             </PDFViewer>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 };
