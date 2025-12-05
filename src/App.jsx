@@ -952,39 +952,66 @@ const TeacherDashboard = ({ profile, doLogout }) => {
   const [errors, setErrors] = useState({});
 
   const saveData = useCallback(async () => {
-    if (!selStu) return;
+    if (!selStu || !subjects.length) return;
 
-    const rPay = subjects.map((s) => {
-      const v = scores[s.id] || { note: 0, cw: 0, hw: 0, test: 0, ca: 0, exam: 0 };
-      const total = v.note + v.cw + v.hw + v.test + v.ca + v.exam;
-      const { grade, remark } = calculateGrade(total);
+    try {
+      const rPay = subjects.map((s) => {
+        const v = scores[s.id] || { note: 0, cw: 0, hw: 0, test: 0, ca: 0, exam: 0 };
+        const total = v.note + v.cw + v.hw + v.test + v.ca + v.exam;
+        const { grade, remark } = calculateGrade(total);
+        
+        return {
+          student_id: selStu.id,
+          subject_id: s.id,
+          score_note: v.note,
+          score_cw: v.cw,
+          score_hw: v.hw,
+          score_test: v.test,
+          score_ca: v.ca,
+          score_exam: v.exam,
+          total,
+          grade,
+          remarks: remark,
+          position: null,
+          highest: null
+        };
+      });
+
+      await supabase.from('results').delete().eq('student_id', selStu.id);
+      const { error: resultError } = await supabase.from('results').insert(rPay);
       
-      return {
-        student_id: selStu.id,
-        subject_id: s.id,
-        score_note: v.note,
-        score_cw: v.cw,
-        score_hw: v.hw,
-        score_test: v.test,
-        score_ca: v.ca,
-        score_exam: v.exam,
-        total,
-        grade,
-        remarks: remark,
-        position: null,
-        highest: null
-      };
-    });
+      if (resultError) {
+        console.error('Error saving results:', resultError);
+        throw resultError;
+      }
 
-    await supabase.from('results').delete().eq('student_id', selStu.id);
-    await supabase.from('results').insert(rPay);
+      const bPay = beh.map((b) => ({ student_id: selStu.id, trait: b.trait, rating: b.rating }));
+      await supabase.from('behaviorals').delete().eq('student_id', selStu.id);
+      if (bPay.length > 0) {
+        const { error: behError } = await supabase.from('behaviorals').insert(bPay);
+        if (behError) {
+          console.error('Error saving behaviorals:', behError);
+          throw behError;
+        }
+      }
 
-    const bPay = beh.map((b) => ({ student_id: selStu.id, trait: b.trait, rating: b.rating }));
-    await supabase.from('behaviorals').delete().eq('student_id', selStu.id);
-    if (bPay.length > 0) await supabase.from('behaviorals').insert(bPay);
+      await supabase.from('comments').delete().eq('student_id', selStu.id);
+      const { error: commError } = await supabase.from('comments').insert({ 
+        student_id: selStu.id, 
+        tutor_comment: comm.tutor_comment || '',
+        principal_comment: comm.principal_comment || ''
+      });
+      
+      if (commError) {
+        console.error('Error saving comments:', commError);
+        throw commError;
+      }
 
-    await supabase.from('comments').delete().eq('student_id', selStu.id);
-    await supabase.from('comments').insert({ student_id: selStu.id, ...comm });
+      console.log('All data saved successfully');
+    } catch (error) {
+      console.error('Save failed:', error);
+      alert('Failed to save data: ' + error.message);
+    }
   }, [selStu, subjects, scores, beh, comm]);
 
   const { debouncedSave, saving, lastSaved } = useAutoSave(saveData);
@@ -1016,10 +1043,10 @@ const TeacherDashboard = ({ profile, doLogout }) => {
   }, [profile]);
 
   useEffect(() => {
-    if (selStu && Object.keys(scores).length > 0) {
+    if (selStu && subjects.length > 0 && Object.keys(scores).length > 0) {
       debouncedSave();
     }
-  }, [scores, beh, comm, debouncedSave, selStu]);
+  }, [scores, beh, comm]);
 
   const addSub = async () => {
     const n = prompt('Enter Subject Name:');
@@ -1070,10 +1097,13 @@ const TeacherDashboard = ({ profile, doLogout }) => {
 
   const updateScore = (subjectId, field, value) => {
     const validated = validateScore(value, field);
-    setScores({
-      ...scores,
-      [subjectId]: { ...scores[subjectId], [field]: validated }
-    });
+    setScores(prevScores => ({
+      ...prevScores,
+      [subjectId]: { 
+        ...prevScores[subjectId], 
+        [field]: validated 
+      }
+    }));
   };
 
   const traits = ['RESPECT', 'RESPONSIBILITY', 'EMPATHY', 'SELF DISCIPLINE', 'COOPERATION', 'LEADERSHIP', 'HONESTY'];
@@ -1246,10 +1276,18 @@ const TeacherDashboard = ({ profile, doLogout }) => {
                                 <input
                                   type="number"
                                   step="0.01"
+                                  min="0"
+                                  max={SCORE_LIMITS[f]}
                                   className="w-16 p-2 border border-gray-300 rounded text-center focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                   value={v[f] || ''}
                                   onChange={(e) => updateScore(s.id, f, e.target.value)}
-                                  max={SCORE_LIMITS[f]}
+                                  onBlur={(e) => {
+                                    // Ensure valid value on blur
+                                    const val = parseFloat(e.target.value) || 0;
+                                    if (val !== v[f]) {
+                                      updateScore(s.id, f, val.toString());
+                                    }
+                                  }}
                                 />
                               </td>
                             ))}
