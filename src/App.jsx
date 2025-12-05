@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Document, Page, Text, View, StyleSheet, PDFViewer, Image as PDFImage } from '@react-pdf/renderer';
+import { 
+  Document, 
+  Page, 
+  Text, 
+  View, 
+  StyleSheet, 
+  PDFViewer, 
+  Image as PDFImage, 
+  PDFDownloadLink 
+} from '@react-pdf/renderer';
 import { 
   School, Users, BookOpen, Save, Plus, LogOut, User, Loader2, AlertCircle, 
   Menu, X, Download, Upload, Check, RefreshCw, TrendingUp, FileText
@@ -513,17 +522,55 @@ const ParentPortal = ({ onBack }) => {
   };
 
   if (data) {
+    const fileName = `${data.student.name.replace(/\s+/g, '_')}_Report_Card.pdf`;
+
     return (
-      <div className="w-full h-screen bg-gray-900 p-4 relative">
-        <button
-          onClick={() => setData(null)}
-          className="absolute top-6 right-6 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg z-50 flex items-center gap-2 shadow-lg"
-        >
-          <X size={18} /> Close
-        </button>
-        <PDFViewer width="100%" height="100%">
-          <ResultPDF {...data} />
-        </PDFViewer>
+      <div className="fixed inset-0 z-50 bg-gray-900 flex flex-col h-[100dvh]">
+        {/* Header Bar - Mobile Friendly */}
+        <div className="bg-white px-4 py-3 shadow-md flex justify-between items-center shrink-0 z-10">
+          <button
+            onClick={() => setData(null)}
+            className="text-gray-600 hover:text-red-600 flex items-center gap-1 font-medium text-sm"
+          >
+            <X size={20} />
+            <span className="hidden sm:inline">Close</span>
+          </button>
+
+          <div className="text-gray-800 font-bold text-sm sm:text-base truncate max-w-[150px] sm:max-w-xs">
+            {data.student.name}
+          </div>
+
+          <PDFDownloadLink
+            document={<ResultPDF {...data} />}
+            fileName={fileName}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm transition-colors"
+          >
+            {({ loading }) => (
+              <>
+                {loading ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
+                <span className="hidden sm:inline">Download PDF</span>
+                <span className="sm:hidden">Save</span>
+              </>
+            )}
+          </PDFDownloadLink>
+        </div>
+
+        {/* PDF Viewer Container */}
+        <div className="flex-1 relative w-full bg-gray-100 overflow-hidden">
+          {/* Mobile Hint */}
+          <div className="sm:hidden absolute top-0 left-0 w-full bg-yellow-50 p-2 text-xs text-yellow-800 text-center border-b border-yellow-100 z-10">
+            If the preview below is blank, please click "Save" above.
+          </div>
+          
+          <PDFViewer 
+            width="100%" 
+            height="100%" 
+            className="w-full h-full border-none"
+            showToolbar={true} 
+          >
+            <ResultPDF {...data} />
+          </PDFViewer>
+        </div>
       </div>
     );
   }
