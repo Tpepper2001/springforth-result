@@ -463,7 +463,7 @@ const ParentPortal = ({ onBack }) => {
         .from('results')
         .select('*, subjects(*)')
         .eq('student_id', stu.id)
-        .order('subjects(name)');
+        .order('id');
 
       const { data: beh } = await supabase
         .from('behaviorals')
@@ -485,11 +485,18 @@ const ParentPortal = ({ onBack }) => {
         if (t) stu.classes.tutor_name = t.full_name;
       }
 
+      // Calculate totals for each result
+      const resultsWithTotals = (res || []).map(r => ({
+        ...r,
+        total: (r.score_note || 0) + (r.score_cw || 0) + (r.score_hw || 0) + 
+               (r.score_test || 0) + (r.score_ca || 0) + (r.score_exam || 0)
+      }));
+
       setData({
         student: stu,
         school: stu.schools,
         classInfo: stu.classes,
-        results: res || [],
+        results: resultsWithTotals,
         behaviors: beh || [],
         comments: com || {}
       });
@@ -665,15 +672,30 @@ const AdminDashboard = ({ profile, doLogout }) => {
   const addStudent = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
+    const classId = fd.get('class_id');
+    
     await supabase.from('students').insert({
       name: fd.get('name'),
       admission_no: fd.get('adm'),
-      class_id: fd.get('class_id'),
+      class_id: classId,
       gender: fd.get('gender'),
       parent_pin: fd.get('pin'),
       school_id: school.id
     });
+    
+    // Update class size
+    const { data: stuCount } = await supabase
+      .from('students')
+      .select('id', { count: 'exact' })
+      .eq('class_id', classId);
+    
+    await supabase
+      .from('classes')
+      .update({ size: stuCount.length })
+      .eq('id', classId);
+    
     alert('Student Added Successfully!');
+    fetchAll();
     e.target.reset();
   };
 
@@ -977,10 +999,16 @@ const TeacherDashboard = ({ profile, doLogout }) => {
 
       if (c) {
         setMyClass(c);
-        const { data: s } = await supabase.from('subjects').select('*').eq('class_id', c.id);
+        const { data: s } = await supabase.from('subjects').select('*').eq('class_id', c.id).order('name');
         setSubjects(s || []);
-        const { data: st } = await supabase.from('students').select('*').eq('class_id', c.id);
+        const { data: st } = await supabase.from('students').select('*').eq('class_id', c.id).order('name');
         setStudents(st || []);
+        
+        // Update class size
+        if (st) {
+          await supabase.from('classes').update({ size: st.length }).eq('id', c.id);
+          setMyClass({ ...c, size: st.length });
+        }
       }
       setLoading(false);
     };
@@ -1011,15 +1039,27 @@ const TeacherDashboard = ({ profile, doLogout }) => {
 
     const map = {};
     subjects.forEach((s) => {
-      const ex = r?.find((x) => x.subject_id === s.id) || {};
-      map[s.id] = {
-        note: ex.score_note || 0,
-        cw: ex.score_cw || 0,
-        hw: ex.score_hw || 0,
-        test: ex.score_test || 0,
-        ca: ex.score_ca || 0,
-        exam: ex.score_exam || 0
-      };
+      const ex = r?.find((x) => x.subject_id === s.id);
+      if (ex) {
+        map[s.id] = {
+          note: ex.score_note || 0,
+          cw: ex.score_cw || 0,
+          hw: ex.score_hw || 0,
+          test: ex.score_test || 0,
+          ca: ex.score_ca || 0,
+          exam: ex.score_exam || 0
+        };
+      } else {
+        // Initialize with zeros if no existing record
+        map[s.id] = {
+          note: 0,
+          cw: 0,
+          hw: 0,
+          test: 0,
+          ca: 0,
+          exam: 0
+        };
+      }
     });
     
     setScores(map);
