@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, Image as PDFImage } from '@react-pdf/renderer';
 import { 
   School, Users, BookOpen, GraduationCap, FileText, 
-  ArrowRight, Plus, Trash2, UserPlus, Upload, CheckCircle, 
-  LayoutDashboard, ChevronRight, Search, MapPin, Phone, AlertCircle
+  ArrowRight, Plus, Trash2, UserPlus, Upload, 
+  LayoutDashboard, ChevronRight, Search, MapPin, AlertCircle, Layers, Copy
 } from 'lucide-react';
 
 // ==========================================
@@ -68,9 +68,9 @@ const ResultPDF = ({ school, student, results, termInfo }) => {
         <View style={pdfStyles.table}>
           <View style={[pdfStyles.row, pdfStyles.headerRow]}>
             <Text style={[pdfStyles.cell, pdfStyles.cellLeft, pdfStyles.wSub, {fontWeight: 'bold', color: '#1e40af'}]}>SUBJECT</Text>
-            <Text style={[pdfStyles.cell, pdfStyles.wSmall, {fontWeight: 'bold'}]}>CA (40)</Text>
-            <Text style={[pdfStyles.cell, pdfStyles.wSmall, {fontWeight: 'bold'}]}>EX (60)</Text>
-            <Text style={[pdfStyles.cell, pdfStyles.wSmall, {fontWeight: 'bold'}]}>TOT (100)</Text>
+            <Text style={[pdfStyles.cell, pdfStyles.wSmall, {fontWeight: 'bold'}]}>CA</Text>
+            <Text style={[pdfStyles.cell, pdfStyles.wSmall, {fontWeight: 'bold'}]}>EXAM</Text>
+            <Text style={[pdfStyles.cell, pdfStyles.wSmall, {fontWeight: 'bold'}]}>TOTAL</Text>
             <Text style={[pdfStyles.cell, pdfStyles.wSmall, {fontWeight: 'bold'}]}>GRD</Text>
             <Text style={[pdfStyles.cell, pdfStyles.cellLeft, pdfStyles.wRem, {fontWeight: 'bold'}]}>REMARK</Text>
           </View>
@@ -151,72 +151,107 @@ const StepCard = ({ active, title, subtitle, onClick, icon: Icon }) => (
 const App = () => {
   const [step, setStep] = useState(1);
   const [schoolData, setSchoolData] = useState({ name: '', address: '', contact: '', logo: null });
+  
+  // Data Structure Changes
   const [classes, setClasses] = useState([]);
+  const [classSubjects, setClassSubjects] = useState({}); // { "Year 7": ["Math", "Eng"], "Year 8": ... }
   
-  // Staff now includes class assignment
-  const [staff, setStaff] = useState({ 
-    principals: [], 
-    teachers: [] // Array of { name, assignedClass }
-  });
-  
-  const [subjects, setSubjects] = useState([]);
+  const [staff, setStaff] = useState({ principals: [], teachers: [] }); // Teachers: {name, assignedClass}
   const [students, setStudents] = useState([]);
   const [termInfo, setTermInfo] = useState({ term: 'First Term', session: '2025/2026' });
   
-  // Results
+  // View State for Subject Management
+  const [activeClassForSubjects, setActiveClassForSubjects] = useState('');
+
+  // Results State
   const [selectedStudentId, setSelectedStudentId] = useState('');
-  const [scoreLimits, setScoreLimits] = useState({ ca: 40, exam: 60 }); // Default Limits
+  const [scoreLimits, setScoreLimits] = useState({ ca: 40, exam: 60 });
   const [currentResult, setCurrentResult] = useState({
     scores: [], tutorComment: '', principalComment: '', selectedTutor: '', selectedPrincipal: ''
   });
 
-  // --- HELPERS ---
+  // --- ACTIONS ---
+
   const handleLogoUpload = (e) => {
     if (e.target.files[0]) setSchoolData({ ...schoolData, logo: URL.createObjectURL(e.target.files[0]) });
   };
   
-  const addItem = (setter, list, item) => item && setter([...list, item]);
-  const removeItem = (setter, list, idx) => setter(list.filter((_, i) => i !== idx));
+  const addClass = (className) => {
+    if (className && !classes.includes(className)) {
+      setClasses([...classes, className]);
+      setClassSubjects(prev => ({...prev, [className]: []})); // Init empty subject list
+    }
+  };
 
-  // Auto-init scores
+  const removeClass = (className) => {
+    setClasses(classes.filter(c => c !== className));
+    // Optional: cleanup classSubjects[className]
+  };
+
+  const addSubjectToClass = (className, subject, addToAll) => {
+    if (!subject) return;
+
+    if (addToAll) {
+      // Add to ALL classes
+      const updated = { ...classSubjects };
+      classes.forEach(cls => {
+        const current = updated[cls] || [];
+        if (!current.includes(subject)) {
+          updated[cls] = [...current, subject];
+        }
+      });
+      setClassSubjects(updated);
+    } else {
+      // Add to specific class
+      const current = classSubjects[className] || [];
+      if (!current.includes(subject)) {
+        setClassSubjects({
+          ...classSubjects,
+          [className]: [...current, subject]
+        });
+      }
+    }
+  };
+
+  const removeSubjectFromClass = (className, subject) => {
+    const current = classSubjects[className] || [];
+    setClassSubjects({
+      ...classSubjects,
+      [className]: current.filter(s => s !== subject)
+    });
+  };
+
+  // Auto-Initialize Result Form
   useEffect(() => {
     if (selectedStudentId) {
-      // Find student class
       const student = students.find(s => s.id === selectedStudentId);
-      // Auto-select tutor based on class
-      const classTutor = staff.teachers.find(t => t.assignedClass === student.className);
+      if (!student) return;
+
+      const cls = student.className;
+      const subjectsForClass = classSubjects[cls] || [];
+      const classTutor = staff.teachers.find(t => t.assignedClass === cls);
 
       setCurrentResult(prev => ({ 
         ...prev, 
         selectedTutor: classTutor ? classTutor.name : '',
-        scores: subjects.map(sub => ({ subject: sub, ca: 0, exam: 0, total: 0, grade: 'F', remark: 'Fail' })) 
+        // Generate scores ONLY for subjects assigned to this class
+        scores: subjectsForClass.map(sub => ({ subject: sub, ca: 0, exam: 0, total: 0, grade: 'F', remark: 'Fail' })) 
       }));
     }
-  }, [selectedStudentId, subjects, students, staff.teachers]);
+  }, [selectedStudentId, students, classSubjects, staff.teachers]);
 
-  // Score Logic with Validation
+  // Score Logic
   const updateScore = (idx, field, val) => {
     const value = parseFloat(val) || 0;
     const updated = [...currentResult.scores];
     
-    // Validate Limits
-    if (field === 'ca' && value > scoreLimits.ca) return; // Stop if over CA limit
-    if (field === 'exam' && value > scoreLimits.exam) return; // Stop if over Exam limit
+    if (field === 'ca' && value > scoreLimits.ca) return;
+    if (field === 'exam' && value > scoreLimits.exam) return;
 
     updated[idx][field] = value;
     
-    // Calculate Total
-    const ca = parseFloat(updated[idx].ca) || 0;
-    const exam = parseFloat(updated[idx].exam) || 0;
-    const total = ca + exam;
-
-    // Hard Stop: Total cannot exceed 100
-    if (total > 100) {
-      // If sum > 100, we don't update the state (reject the input)
-      // Or we can clamp it. Let's reject.
-      alert(`Total score cannot exceed 100. (Current: ${total})`);
-      return; 
-    }
+    const total = (parseFloat(updated[idx].ca)||0) + (parseFloat(updated[idx].exam)||0);
+    if (total > 100) { alert('Total exceeds 100!'); return; }
 
     updated[idx].total = total;
     updated[idx].grade = total >= 75 ? 'A' : total >= 65 ? 'B' : total >= 50 ? 'C' : total >= 40 ? 'D' : 'F';
@@ -278,62 +313,120 @@ const App = () => {
             </div>
           )}
 
-          {/* STEP 2: ACADEMICS */}
+          {/* STEP 2: ACADEMICS (Split View) */}
           {step === 2 && (
             <div className="space-y-8 animate-fade-in-up">
-               <h2 className="text-3xl font-bold text-slate-900">Classes & Subjects</h2>
-               <div className="grid md:grid-cols-2 gap-8">
-                 <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                    <h3 className="font-bold mb-4 flex gap-2 text-indigo-900"><LayoutDashboard size={18}/> Manage Classes</h3>
+               <h2 className="text-3xl font-bold text-slate-900">Curriculum Management</h2>
+               
+               <div className="flex flex-col lg:flex-row gap-6 h-[500px]">
+                 
+                 {/* Left: Class List */}
+                 <div className="w-full lg:w-1/3 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col">
+                    <h3 className="font-bold mb-4 flex gap-2 text-indigo-900"><LayoutDashboard size={18}/> Classes</h3>
                     <div className="flex gap-2 mb-4">
-                       <input id="clsIn" className="flex-1 bg-slate-50 rounded-xl px-4 border-none" placeholder="New Class Name" />
-                       <button onClick={()=>{addItem(setClasses, classes, document.getElementById('clsIn').value); document.getElementById('clsIn').value=''}} 
-                         className="bg-indigo-600 text-white p-3 rounded-xl"><Plus size={20}/></button>
+                       <input id="clsIn" className="flex-1 bg-slate-50 rounded-xl px-4 border-none text-sm" placeholder="New Class..." />
+                       <button onClick={()=>{
+                          const val = document.getElementById('clsIn').value;
+                          addClass(val);
+                          document.getElementById('clsIn').value='';
+                       }} className="bg-indigo-600 text-white p-2 rounded-xl"><Plus size={20}/></button>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                       {classes.map((c, i) => <span key={i} onClick={()=>removeItem(setClasses, classes, i)} className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-bold cursor-pointer hover:bg-red-50 hover:text-red-500 flex items-center gap-1">{c} <Trash2 size={12}/></span>)}
+                    <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                       {classes.map((c, i) => (
+                         <div key={i} 
+                           onClick={() => setActiveClassForSubjects(c)}
+                           className={`p-3 rounded-xl flex justify-between items-center cursor-pointer transition-all border
+                           ${activeClassForSubjects === c ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-white border-transparent hover:bg-slate-50'}`}
+                         >
+                           <span className={`font-bold text-sm ${activeClassForSubjects === c ? 'text-indigo-700' : 'text-slate-600'}`}>{c}</span>
+                           <div className="flex items-center gap-2">
+                             <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded-full text-slate-600">
+                               {(classSubjects[c] || []).length} Subs
+                             </span>
+                             <Trash2 size={14} className="text-slate-300 hover:text-red-500" onClick={(e)=>{e.stopPropagation(); removeClass(c)}}/>
+                           </div>
+                         </div>
+                       ))}
+                       {classes.length === 0 && <p className="text-slate-400 text-sm text-center italic mt-10">Add a class to start.</p>}
                     </div>
                  </div>
 
-                 <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                    <h3 className="font-bold mb-4 flex gap-2 text-emerald-900"><BookOpen size={18}/> Manage Subjects</h3>
-                    <div className="flex gap-2 mb-4">
-                       <input id="subIn" className="flex-1 bg-slate-50 rounded-xl px-4 border-none" placeholder="New Subject Name" />
-                       <button onClick={()=>{addItem(setSubjects, subjects, document.getElementById('subIn').value); document.getElementById('subIn').value=''}} 
-                         className="bg-emerald-600 text-white p-3 rounded-xl"><Plus size={20}/></button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                       {subjects.map((s, i) => <span key={i} onClick={()=>removeItem(setSubjects, subjects, i)} className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold cursor-pointer hover:bg-red-50 hover:text-red-500 flex items-center gap-1">{s} <Trash2 size={12}/></span>)}
-                    </div>
+                 {/* Right: Subject List for Active Class */}
+                 <div className="w-full lg:w-2/3 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col">
+                    {activeClassForSubjects ? (
+                      <>
+                        <div className="flex justify-between items-center mb-4">
+                           <h3 className="font-bold flex gap-2 text-emerald-900 items-center">
+                             <BookOpen size={18}/> Subjects for <span className="bg-indigo-100 text-indigo-700 px-2 rounded">{activeClassForSubjects}</span>
+                           </h3>
+                        </div>
+                        
+                        <div className="bg-slate-50 p-4 rounded-xl mb-4 border border-slate-100">
+                           <div className="flex gap-2 mb-2">
+                              <input id="subIn" className="flex-1 bg-white border border-slate-200 rounded-xl px-4 text-sm" placeholder={`Add Subject to ${activeClassForSubjects}...`} />
+                              <button onClick={()=>{
+                                 const val = document.getElementById('subIn').value;
+                                 const all = document.getElementById('chkAll').checked;
+                                 addSubjectToClass(activeClassForSubjects, val, all);
+                                 document.getElementById('subIn').value='';
+                                 document.getElementById('chkAll').checked = false;
+                              }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 rounded-xl font-bold text-sm">Add</button>
+                           </div>
+                           <div className="flex items-center gap-2">
+                              <input type="checkbox" id="chkAll" className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 border-gray-300"/>
+                              <label htmlFor="chkAll" className="text-xs text-slate-500 font-medium select-none cursor-pointer">Add to ALL classes (e.g. Mathematics)</label>
+                           </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto content-start flex flex-wrap gap-2 pr-1 custom-scrollbar">
+                           {(classSubjects[activeClassForSubjects] || []).map((s, i) => (
+                             <span key={i} className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg text-sm font-bold flex items-center gap-2 group">
+                               {s} 
+                               <button onClick={()=>removeSubjectFromClass(activeClassForSubjects, s)} className="text-emerald-300 hover:text-red-500 transition-colors"><Trash2 size={12}/></button>
+                             </span>
+                           ))}
+                           {(classSubjects[activeClassForSubjects] || []).length === 0 && (
+                             <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
+                                <Layers size={40} className="mb-2"/>
+                                <p>No subjects assigned to this class yet.</p>
+                             </div>
+                           )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                         <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                           <ArrowRight size={24} className="opacity-50"/>
+                         </div>
+                         <p className="font-medium">Select a Class on the left to manage its subjects.</p>
+                      </div>
+                    )}
                  </div>
+
                </div>
-
-               {/* Score Configuration */}
-               <div className="bg-orange-50 p-6 rounded-3xl border border-orange-100">
-                  <h3 className="font-bold text-orange-800 mb-2 flex items-center gap-2"><AlertCircle size={18}/> Grading Limits</h3>
-                  <div className="flex gap-4">
-                     <div className="flex-1">
+               
+               {/* Global Settings */}
+               <div className="bg-orange-50 p-6 rounded-3xl border border-orange-100 flex gap-4 items-center">
+                  <div className="p-3 bg-orange-100 text-orange-600 rounded-full"><AlertCircle size={24}/></div>
+                  <div className="flex-1 flex gap-4">
+                     <div className="space-y-1">
                         <label className="text-xs font-bold text-orange-600 uppercase">Max CA Score</label>
-                        <input type="number" value={scoreLimits.ca} onChange={(e)=>setScoreLimits({...scoreLimits, ca: parseFloat(e.target.value)})} className="w-full p-2 rounded border border-orange-200" />
+                        <input type="number" value={scoreLimits.ca} onChange={(e)=>setScoreLimits({...scoreLimits, ca: parseFloat(e.target.value)})} className="w-24 p-2 rounded border border-orange-200 bg-white" />
                      </div>
-                     <div className="flex-1">
+                     <div className="space-y-1">
                         <label className="text-xs font-bold text-orange-600 uppercase">Max Exam Score</label>
-                        <input type="number" value={scoreLimits.exam} onChange={(e)=>setScoreLimits({...scoreLimits, exam: parseFloat(e.target.value)})} className="w-full p-2 rounded border border-orange-200" />
-                     </div>
-                     <div className="flex-1 flex items-end pb-2 font-bold text-orange-900">
-                        Total Max: 100%
+                        <input type="number" value={scoreLimits.exam} onChange={(e)=>setScoreLimits({...scoreLimits, exam: parseFloat(e.target.value)})} className="w-24 p-2 rounded border border-orange-200 bg-white" />
                      </div>
                   </div>
                </div>
             </div>
           )}
 
-          {/* STEP 3: STAFF (Sorted by Class) */}
+          {/* STEP 3: STAFF */}
           {step === 3 && (
              <div className="space-y-8 animate-fade-in-up">
                 <h2 className="text-3xl font-bold text-slate-900">Staff Management</h2>
                 <div className="grid md:grid-cols-2 gap-8">
-                  {/* Teachers */}
                   <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
                      <h3 className="font-bold mb-4 text-indigo-900 flex items-center gap-2"><Users size={18}/> Teachers</h3>
                      <div className="space-y-3 p-4 bg-slate-50 rounded-xl mb-4">
@@ -349,56 +442,40 @@ const App = () => {
                            document.getElementById('teachName').value = '';
                         }} className="w-full bg-slate-900 text-white py-2 rounded-xl text-sm font-bold">Add Teacher</button>
                      </div>
-
-                     {/* Grouped Teachers Display */}
                      <div className="space-y-4">
                         {classes.map(cls => {
-                           const classTeachers = staff.teachers.filter(t => t.assignedClass === cls);
-                           if(classTeachers.length === 0) return null;
-                           return (
+                           const ts = staff.teachers.filter(t => t.assignedClass === cls);
+                           return ts.length > 0 && (
                               <div key={cls}>
                                  <div className="text-xs font-bold text-indigo-500 uppercase mb-1 border-b border-indigo-100 pb-1">{cls}</div>
-                                 {classTeachers.map((t, i) => (
+                                 {ts.map((t, i) => (
                                     <div key={i} className="flex justify-between items-center text-sm py-1 pl-2">
                                        <span>{t.name}</span>
                                        <button onClick={()=>setStaff(p=>({...p, teachers: p.teachers.filter(x=>x.name!==t.name)}))} className="text-red-400"><Trash2 size={14}/></button>
                                     </div>
                                  ))}
                               </div>
-                           )
+                           );
                         })}
-                        {/* Unassigned */}
-                        {staff.teachers.some(t => !t.assignedClass) && (
-                           <div>
-                              <div className="text-xs font-bold text-slate-400 uppercase mb-1 border-b pb-1">General Staff</div>
-                              {staff.teachers.filter(t => !t.assignedClass).map((t, i) => (
-                                 <div key={i} className="flex justify-between items-center text-sm py-1 pl-2">
-                                    <span>{t.name}</span>
-                                    <button onClick={()=>setStaff(p=>({...p, teachers: p.teachers.filter(x=>x.name!==t.name)}))} className="text-red-400"><Trash2 size={14}/></button>
-                                 </div>
-                              ))}
-                           </div>
-                        )}
                      </div>
                   </div>
-
-                  {/* Principals */}
                   <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 h-fit">
                      <h3 className="font-bold mb-4 text-purple-900 flex items-center gap-2"><GraduationCap size={18}/> Principals</h3>
                      <div className="flex gap-2 mb-4">
                         <input id="prinIn" className="flex-1 bg-slate-50 rounded-xl px-3 border-none text-sm" placeholder="Principal Name" />
-                        <button onClick={()=>{addItem((v)=>setStaff({...staff, principals:v}), staff.principals, document.getElementById('prinIn').value); document.getElementById('prinIn').value=''}} 
-                         className="bg-purple-600 text-white p-2 rounded-xl"><Plus size={18}/></button>
+                        <button onClick={()=>{
+                           const val = document.getElementById('prinIn').value;
+                           if(val) setStaff(prev => ({...prev, principals: [...prev.principals, val]}));
+                           document.getElementById('prinIn').value='';
+                        }} className="bg-purple-600 text-white p-2 rounded-xl"><Plus size={18}/></button>
                      </div>
-                     <div className="space-y-2">
-                        {staff.principals.map((p,i) => <div key={i} className="bg-slate-50 p-2 rounded-lg text-sm flex justify-between">{p} <Trash2 size={14} className="text-red-400 cursor-pointer" onClick={()=>removeItem((v)=>setStaff({...staff, principals:v}), staff.principals, i)}/></div>)}
-                     </div>
+                     {staff.principals.map((p,i) => <div key={i} className="bg-slate-50 p-2 rounded-lg text-sm flex justify-between mb-1">{p} <Trash2 size={14} className="text-red-400 cursor-pointer" onClick={()=>setStaff(prev=>({...prev, principals: prev.principals.filter((_,idx)=>idx!==i)}))}/></div>)}
                   </div>
                 </div>
              </div>
           )}
 
-          {/* STEP 4: ENROLLMENT (Sorted by Class) */}
+          {/* STEP 4: ENROLLMENT */}
           {step === 4 && (
              <div className="space-y-8 animate-fade-in-up">
                 <h2 className="text-3xl font-bold text-slate-900">Student Enrollment</h2>
@@ -423,8 +500,6 @@ const App = () => {
                       <button className="md:col-span-4 bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition-colors">Enrol Student</button>
                    </form>
                 </div>
-
-                {/* Students Sorted by Class */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                    {classes.map(cls => {
                       const classStudents = students.filter(s => s.className === cls);
@@ -450,7 +525,7 @@ const App = () => {
              </div>
           )}
 
-          {/* STEP 5: RESULTS (Sorted Dropdown) */}
+          {/* STEP 5: RESULTS */}
           {step === 5 && (
             <div className="h-[calc(100vh-140px)] flex flex-col lg:flex-row gap-6 animate-fade-in-up">
               <div className="w-full lg:w-1/3 flex flex-col gap-6 overflow-y-auto pr-2">
@@ -479,9 +554,9 @@ const App = () => {
                            <h3 className="font-bold text-slate-800">Input Scores</h3>
                            <div className="text-[10px] text-slate-400">Max: CA {scoreLimits.ca} / EX {scoreLimits.exam}</div>
                         </div>
-                        {currentResult.scores.map((score, i) => (
+                        {currentResult.scores.length > 0 ? currentResult.scores.map((score, i) => (
                            <div key={i} className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-slate-500 w-20 truncate">{score.subject}</span>
+                              <span className="text-xs font-bold text-slate-500 w-20 truncate" title={score.subject}>{score.subject}</span>
                               <input type="number" className="w-14 p-2 bg-slate-50 rounded-lg text-center text-xs font-bold focus:ring-1 focus:ring-indigo-500" placeholder="CA" 
                                 value={score.ca} onChange={e=>updateScore(i,'ca',e.target.value)} />
                               <input type="number" className="w-14 p-2 bg-slate-50 rounded-lg text-center text-xs font-bold focus:ring-1 focus:ring-indigo-500" placeholder="EX" 
@@ -490,7 +565,12 @@ const App = () => {
                                  {score.total}
                               </span>
                            </div>
-                        ))}
+                        )) : (
+                           <div className="text-center text-slate-400 italic text-sm py-4">
+                              No subjects assigned to this student's class.
+                              <button onClick={()=>setStep(2)} className="block mx-auto mt-2 text-indigo-600 text-xs font-bold underline">Manage Subjects</button>
+                           </div>
+                        )}
                      </div>
 
                      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4">
@@ -498,10 +578,8 @@ const App = () => {
                         <textarea className="w-full p-3 bg-slate-50 rounded-xl text-sm" placeholder="Tutor's Comment" rows="2"
                            value={currentResult.tutorComment} onChange={e=>setCurrentResult({...currentResult, tutorComment:e.target.value})}></textarea>
                         
-                        {/* Auto-selects based on class, but allows override */}
                         <select className="w-full p-2 bg-slate-50 rounded-xl text-sm" value={currentResult.selectedTutor} onChange={e=>setCurrentResult({...currentResult, selectedTutor:e.target.value})}>
                            <option value="">Select Tutor...</option>
-                           {/* Group Teachers by Class in Dropdown */}
                            {classes.map(cls => (
                               <optgroup key={cls} label={cls}>
                                  {staff.teachers.filter(t=>t.assignedClass===cls).map((t,i)=><option key={i} value={t.name}>{t.name}</option>)}
