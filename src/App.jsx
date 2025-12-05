@@ -2,18 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, Image as PDFImage } from '@react-pdf/renderer';
 import { 
-  School, Users, BookOpen, Save, Plus, LogOut, User, Loader2
+  School, Users, BookOpen, Save, Plus, LogOut, User, Loader2, AlertCircle
 } from 'lucide-react';
 
 // ==========================================
-// ⚠️ REPLACE THESE WITH YOUR KEYS FROM SUPABASE DASHBOARD
+// ⚠️ REPLACE KEYS
 // ==========================================
-const supabaseUrl = 'https://lckdmbegwmvtxjuddxcc.supabase.co'; 
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxja2RtYmVnd212dHhqdWRkeGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ5NTI3MjcsImV4cCI6MjA4MDUyODcyN30.MzrMr8q3UuozyrEjoRGyfDlkgIvWv9IKKdjDx6aJMsw';
+const supabaseUrl = 'YOUR_SUPABASE_URL_HERE'; 
+const supabaseKey = 'YOUR_SUPABASE_ANON_KEY_HERE';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==========================================
-// 1. PDF TEMPLATE
+// 1. PDF TEMPLATE (Unchanged)
 // ==========================================
 const styles = StyleSheet.create({
   page: { padding: 20, fontFamily: 'Helvetica', fontSize: 8 },
@@ -110,9 +110,6 @@ const ResultPDF = ({ school, student, results, behaviors, comments, classInfo })
              );
            })}
         </View>
-        <Text style={{fontSize: 6, textAlign:'center', backgroundColor: '#bfdbfe', border:'1px solid black', marginTop: 2}}>
-           86-100 (A*) Excellent, 76-85 (A) Outstanding, 66-75 (B) Very Good, 60-65 (C) Good, 50-59 (D) Fair, 40-49 (E) Pass
-        </Text>
         <View style={styles.bottomSection}>
            <View style={styles.commentsCol}>
               <View style={styles.commentBox}>
@@ -187,12 +184,12 @@ const ParentPortal = ({ onBack }) => {
          const {data: beh} = await supabase.from('behaviorals').select('*').eq('student_id', stu.id);
          const {data: com} = await supabase.from('comments').select('*').eq('student_id', stu.id).single();
          if(stu.classes?.form_tutor_id) {
-            const {data:t} = await supabase.from('profiles').select('full_name').eq('id', stu.classes.form_tutor_id).single();
-            if(t && stu.classes) stu.classes.profiles = t;
+             const {data:t} = await supabase.from('profiles').select('full_name').eq('id', stu.classes.form_tutor_id).single();
+             if(t && stu.classes) stu.classes.profiles = t;
          }
          setData({ student: stu, school: stu.schools, classInfo: stu.classes, results: res, behaviors: beh, comments: com });
       } else {
-         alert('Invalid details');
+         alert('Invalid Admission No or PIN');
       }
       setLoading(false);
    };
@@ -224,7 +221,7 @@ const ParentPortal = ({ onBack }) => {
 // ==========================================
 // 3. ADMIN DASHBOARD
 // ==========================================
-const AdminDashboard = ({ profile }) => {
+const AdminDashboard = ({ profile, doLogout }) => {
    const [view, setView] = useState('school');
    const [school, setSchool] = useState({});
    const [classes, setClasses] = useState([]);
@@ -267,7 +264,7 @@ const AdminDashboard = ({ profile }) => {
       <div className="p-6 bg-gray-50 min-h-screen">
          <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-bold text-blue-900">Admin Dashboard</h1>
-            <button onClick={()=>supabase.auth.signOut()} className="text-red-500 font-bold">Logout</button>
+            <button onClick={doLogout} className="text-red-500 font-bold flex items-center gap-1"><LogOut size={16}/> Logout</button>
          </div>
          <div className="flex gap-4 mb-6">
             {['school','classes','students'].map(v => (
@@ -337,7 +334,7 @@ const AdminDashboard = ({ profile }) => {
 // ==========================================
 // 4. TEACHER DASHBOARD
 // ==========================================
-const TeacherDashboard = ({ profile }) => {
+const TeacherDashboard = ({ profile, doLogout }) => {
    const [myClass, setMyClass] = useState(null);
    const [subjects, setSubjects] = useState([]);
    const [students, setStudents] = useState([]);
@@ -413,7 +410,7 @@ const TeacherDashboard = ({ profile }) => {
    };
 
    if(loading) return <div className="p-10">Loading...</div>;
-   if(!myClass) return <div className="p-10 text-red-500">No Class Assigned. <button onClick={()=>supabase.auth.signOut()} className="underline">Logout</button></div>;
+   if(!myClass) return <div className="p-10 text-red-500">No Class Assigned. <button onClick={doLogout} className="underline">Logout</button></div>;
 
    return (
       <div className="flex h-screen bg-slate-50 overflow-hidden">
@@ -423,7 +420,7 @@ const TeacherDashboard = ({ profile }) => {
             {students.map(s => (
                <div key={s.id} onClick={()=>loadStu(s)} className={`p-2 mb-1 rounded cursor-pointer ${selStu?.id===s.id?'bg-blue-600 text-white':'hover:bg-gray-100'}`}>{s.name}</div>
             ))}
-            <button onClick={()=>supabase.auth.signOut()} className="mt-8 text-red-500 text-sm">Logout</button>
+            <button onClick={doLogout} className="mt-8 text-red-500 text-sm flex items-center gap-1"><LogOut size={14}/> Logout</button>
          </div>
          <div className="flex-1 p-6 overflow-y-auto">
             {selStu ? (
@@ -533,41 +530,54 @@ const App = () => {
    const [mode, setMode] = useState('auth');
    const [init, setInit] = useState(true);
 
+   // Hard Logout Function (Clears storage too)
+   const doLogout = async () => {
+      await supabase.auth.signOut();
+      localStorage.clear();
+      setSess(null);
+      setProf(null);
+      setMode('auth');
+   };
+
    useEffect(() => {
-      supabase.auth.getSession().then(({data:{session}}) => chk(session));
-      const {data:{subscription}} = supabase.auth.onAuthStateChange((_e, session) => chk(session));
+      supabase.auth.getSession().then(({data:{session}}) => checkUser(session));
+      const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session) => {
+         if (event === 'SIGNED_OUT') doLogout();
+         else checkUser(session);
+      });
       return () => subscription.unsubscribe();
    }, []);
 
-   const chk = async (s) => {
-      setSess(s);
+   const checkUser = async (s) => {
       if(s) {
-         console.log("Checking Profile for:", s.user.id);
+         setSess(s);
          const {data, error} = await supabase.from('profiles').select('*').eq('id', s.user.id).single();
-         if(error) console.error("Profile Error:", error);
-         setProf(data);
-         if(data) setMode('dash');
-      } else {
-         setProf(null);
-         if(mode!=='parent') setMode('auth');
+         if(error) {
+            console.error("Profile Fetch Error:", error);
+            // If fetching fails, force logout so they aren't stuck
+            doLogout();
+         } else {
+            setProf(data);
+            setMode('dash');
+         }
       }
       setInit(false);
    };
 
    if(init) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin"/></div>;
 
-   // Graceful "Stuck" Handling
-   if(sess && !prof) return (
+   if(mode === 'parent') return <ParentPortal onBack={()=>setMode('auth')} />;
+   if(!sess) return <Auth onMode={setMode} />;
+   
+   if(!prof) return (
       <div className="flex h-screen items-center justify-center flex-col">
-         <h2 className="text-xl font-bold mb-2">Profile Not Found</h2>
-         <p className="text-gray-500 mb-4">Database locked or profile missing.</p>
-         <button onClick={()=>supabase.auth.signOut()} className="bg-red-500 text-white px-4 py-2 rounded">Force Logout</button>
+         <Loader2 className="animate-spin mb-4"/>
+         <p>Loading Profile...</p>
+         <button onClick={doLogout} className="mt-4 text-red-500 underline">Cancel</button>
       </div>
    );
 
-   if(mode === 'parent') return <ParentPortal onBack={()=>setMode('auth')} />;
-   if(!sess) return <Auth onMode={setMode} />;
-   return prof.role === 'admin' ? <AdminDashboard profile={prof} /> : <TeacherDashboard profile={prof} />;
+   return prof.role === 'admin' ? <AdminDashboard profile={prof} doLogout={doLogout} /> : <TeacherDashboard profile={prof} doLogout={doLogout} />;
 };
 
 export default App;
