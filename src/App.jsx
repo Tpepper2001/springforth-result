@@ -486,11 +486,16 @@ const ParentPortal = ({ onBack }) => {
       }
 
       // Calculate totals for each result
-      const resultsWithTotals = (res || []).map(r => ({
-        ...r,
-        total: (r.score_note || 0) + (r.score_cw || 0) + (r.score_hw || 0) + 
-               (r.score_test || 0) + (r.score_ca || 0) + (r.score_exam || 0)
-      }));
+      const resultsWithTotals = (res || []).map(r => {
+        const total = (r.score_note || 0) + (r.score_cw || 0) + (r.score_hw || 0) + 
+                     (r.score_test || 0) + (r.score_ca || 0) + (r.score_exam || 0);
+        return {
+          ...r,
+          total,
+          position: r.position || '-',
+          highest: r.highest || '-'
+        };
+      });
 
       setData({
         student: stu,
@@ -969,11 +974,8 @@ const TeacherDashboard = ({ profile, doLogout }) => {
           score_test: v.test,
           score_ca: v.ca,
           score_exam: v.exam,
-          total,
           grade,
-          remarks: remark,
-          position: null,
-          highest: null
+          remarks: remark
         };
       });
 
