@@ -96,6 +96,7 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
     } else {
       total = (r.score_note||0) + (r.score_cw||0) + (r.score_hw||0) + (r.score_test||0) + (r.score_ca||0) + (r.score_exam||0);
     }
+    // Simple scaling for Mid-Term grade if needed, or raw logic
     const { grade, remark } = calculateGrade(isMidTerm ? (total / 40) * 100 : total);
     return { ...r, total, grade, remark };
   });
@@ -151,11 +152,13 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
             <View key={i} style={pdfStyles.tableRow}>
               <Text style={[pdfStyles.cell, pdfStyles.colSN, pdfStyles.cellCenter]}>{i + 1}</Text>
               <Text style={[pdfStyles.cell, pdfStyles.colSubject]}>{r.subjects?.name}</Text>
+              
               <Text style={[pdfStyles.cell, pdfStyles.colScore, pdfStyles.cellCenter]}>
                  {(r.score_note||0) + (r.score_cw||0) + (r.score_hw||0) + (r.score_ca||0)}
               </Text>
               <Text style={[pdfStyles.cell, pdfStyles.colScore, pdfStyles.cellCenter]}>{r.score_test}</Text>
               {!isMidTerm && <Text style={[pdfStyles.cell, pdfStyles.colScore, pdfStyles.cellCenter]}>{r.score_exam}</Text>}
+
               <Text style={[pdfStyles.cell, pdfStyles.colTotal, pdfStyles.cellCenter]}>{r.total}</Text>
               {!isMidTerm && <Text style={[pdfStyles.cell, pdfStyles.colGrade, pdfStyles.cellCenter]}>{r.grade}</Text>}
               <Text style={[pdfStyles.cell, pdfStyles.colRemark]}>{isMidTerm ? (r.total >= 20 ? 'Pass' : 'Fail') : r.remark}</Text>
@@ -233,6 +236,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       const { data: cls } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', s.id);
       setClasses(cls || []);
 
+      // Fetch students and check 'submission_status' in comments
       const { data: stu } = await supabase.from('students')
         .select('*, classes(name), comments(submission_status)')
         .eq('school_id', s.id)
@@ -310,18 +314,18 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       setReportType(type);
 
       const { data: results } = await supabase.from('results').select('*, subjects(*)').eq('student_id', student.id);
-      const { data: comments } = await supabase.from('comments').select('*').eq('student_id', student.id).single();
+      // FIX: Use maybeSingle() to handle cases where no comment/result exists yet
+      const { data: comments } = await supabase.from('comments').select('*').eq('student_id', student.id).maybeSingle();
       
-      // Safety check for behaviors parsing
       const behaviorList = comments?.behaviors ? JSON.parse(comments.behaviors) : [];
 
       setPreviewData({
           school,
           student,
           classInfo: student.classes,
-          results: results || [],
-          comments: comments || {},
-          behaviors: behaviorList.map(t => ({ trait: t, rating: 'Good' })) 
+          results: results || [], // Handle empty results safely
+          comments: comments || {}, // Handle missing comments safely
+          behaviors: behaviorList.map(t => ({ trait: t, rating: 'Good' }))
       });
   };
 
@@ -345,6 +349,13 @@ const SchoolAdmin = ({ profile, onLogout }) => {
           </div>
       )
   }
+
+  // Helper to extract status from array or object
+  const getStatus = (s) => {
+      if (Array.isArray(s.comments) && s.comments.length > 0) return s.comments[0].submission_status;
+      if (s.comments && !Array.isArray(s.comments)) return s.comments.submission_status;
+      return null;
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
@@ -452,19 +463,21 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                 <th className="p-3">Adm No</th>
                                 <th className="p-3">Class</th>
                                 <th className="p-3">Status</th>
-                                <th className="p-3">Result Access</th>
+                                <th className="p-3">Admin View</th>
                                 <th className="p-3">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {students.map(s => (
+                            {students.map(s => {
+                                const status = getStatus(s);
+                                return (
                                 <tr key={s.id} className="border-b hover:bg-gray-50">
                                     <td className="p-3">{s.name}</td>
                                     <td className="p-3">{s.admission_no}</td>
                                     <td className="p-3">{s.classes?.name}</td>
                                     <td className="p-3">
-                                        {s.comments?.[0]?.submission_status === 'published' ? 
-                                         <span className="text-green-600 font-bold text-xs">Published</span> : 
+                                        {status === 'published' ? 
+                                         <span className="text-green-600 font-bold text-xs bg-green-50 px-2 py-1 rounded">Published</span> : 
                                          <span className="text-gray-400 text-xs">Draft</span>
                                         }
                                     </td>
@@ -483,7 +496,8 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                                )
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -602,7 +616,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setScores(scoreMap);
 
     // Fetch Comments
-    const { data: comm } = await supabase.from('comments').select('*').eq('student_id', student.id).single();
+    const { data: comm } = await supabase.from('comments').select('*').eq('student_id', student.id).maybeSingle();
     setComment(comm?.tutor_comment || "");
     setBehaviors(comm?.behaviors ? JSON.parse(comm.behaviors) : {});
     
@@ -670,9 +684,14 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
   const publishResult = async () => {
     if(!window.confirm("Publish this result? Parents will be able to see it immediately.")) return;
-    await saveResultToDB('published');
-    alert("Result Published!");
-    setShowPreview(false);
+    
+    try {
+        await saveResultToDB('published');
+        alert("Result Published!");
+        setShowPreview(false);
+    } catch(err) {
+        alert("Failed to publish: " + err.message);
+    }
   }
 
   if (showPreview) {
@@ -977,7 +996,10 @@ const ParentPortal = ({ onBack }) => {
         if (error || !stu) return window.alert('Invalid Admission No or PIN');
         
         // Strict Check: Parents only see published results
-        const isPublished = stu.comments?.[0]?.submission_status === 'published';
+        // Handle cases where comments is an array or object
+        const commentData = Array.isArray(stu.comments) ? stu.comments[0] : stu.comments;
+        const isPublished = commentData?.submission_status === 'published';
+        
         if (!isPublished) return alert("Result not yet published by Class Teacher.");
 
         const processed = stu.results.map(r => ({
@@ -985,13 +1007,11 @@ const ParentPortal = ({ onBack }) => {
             total: (r.score_note||0)+(r.score_cw||0)+(r.score_hw||0)+(r.score_test||0)+(r.score_ca||0)+(r.score_exam||0)
         }));
 
-        // Safe check for behaviors
-        const commentData = stu.comments?.[0] || {};
-        const behaviors = commentData.behaviors ? JSON.parse(commentData.behaviors) : [];
+        const behaviors = commentData?.behaviors ? JSON.parse(commentData.behaviors) : [];
 
         setData({
             student: stu, school: stu.schools, classInfo: stu.classes,
-            results: processed, comments: commentData,
+            results: processed, comments: commentData || {},
             behaviors: behaviors.map(k => ({ trait: k, rating: 'Good' })) 
         });
     };
