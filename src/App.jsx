@@ -5,7 +5,7 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, Copy, Check, User, Download,
-  X, Eye, CheckCircle, Send, Settings, Users, BookOpen, FileText, Trash2, Upload, AlertCircle, Save
+  X, Eye, CheckCircle, Send, Settings, Users, BookOpen, FileText, Trash2, AlertCircle
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -253,7 +253,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     }
 
     await supabase.from('schools').update({ ...updates, logo_url }).eq('id', school.id);
-    alert('School info updated!');
+    window.alert('School info updated!');
     fetchSchoolData();
   };
 
@@ -263,7 +263,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     const data = Object.fromEntries(form.entries());
     
     // Limit check
-    if (students.length >= school.max_students) return alert("Subscription limit reached!");
+    if (students.length >= school.max_students) return window.alert("Subscription limit reached!");
 
     const pin = generatePIN();
     const { error } = await supabase.from('students').insert({
@@ -275,9 +275,9 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       parent_pin: pin
     });
 
-    if (error) alert(error.message);
+    if (error) window.alert(error.message);
     else {
-      alert(`Student Added! Parent PIN: ${pin}`);
+      window.alert(`Student Added! Parent PIN: ${pin}`);
       e.target.reset();
       fetchSchoolData();
     }
@@ -404,7 +404,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                     <td className="p-3">{s.classes?.name}</td>
                                     <td className="p-3 font-mono bg-yellow-50">{s.parent_pin}</td>
                                     <td className="p-3">
-                                        <button onClick={() => {navigator.clipboard.writeText(s.parent_pin); alert('PIN Copied')}} className="text-blue-600 mr-2"><Copy size={16}/></button>
+                                        <button onClick={() => {navigator.clipboard.writeText(s.parent_pin); window.alert('PIN Copied')}} className="text-blue-600 mr-2"><Copy size={16}/></button>
                                         <button className="text-red-600"><Trash2 size={16}/></button>
                                     </td>
                                 </tr>
@@ -467,7 +467,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                         <Check size={14}/> Approve Standard
                                     </button>
                                     <button onClick={() => {
-                                        const c = prompt("Enter custom remark:", "Outstanding Result");
+                                        const c = window.prompt("Enter custom remark:", "Outstanding Result");
                                         if(c) approveResult(app.id, c);
                                     }} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">
                                         Custom Remark
@@ -528,14 +528,14 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   };
 
   const addSubject = async () => {
-    const name = prompt("Subject Name:");
+    const name = window.prompt("Subject Name:");
     if (!name) return;
     await supabase.from('subjects').insert({ class_id: curClass.id, name });
     loadClass(curClass.id);
   };
 
   const deleteSubject = async (id) => {
-    if (!confirm("Delete subject? This will wipe scores for this subject.")) return;
+    if (!window.confirm("Delete subject? This will wipe scores for this subject.")) return;
     await supabase.from('subjects').delete().eq('id', id);
     loadClass(curClass.id);
   };
@@ -667,7 +667,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   <button onClick={() => setShowPreview(false)} className="flex items-center gap-2"><X /> Close Preview</button>
                   <h2 className="font-bold">{previewData.student.name}</h2>
                   <div className="flex gap-2">
-                    {!isLocked && <button className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2" onClick={()=>{alert('Result Submitted to Principal!'); setShowPreview(false);}}>
+                    {!isLocked && <button className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2" onClick={()=>{window.alert('Result Submitted to Principal!'); setShowPreview(false);}}>
                         <Send size={16}/> Submit for Approval
                     </button>}
                   </div>
@@ -848,7 +848,7 @@ const Auth = ({ onLogin, onParent }) => {
         try {
             if (mode === 'central') {
                 if (form.email === 'oluwatoyin' && form.password === 'Funmilola') onLogin({ role: 'central' });
-                else alert('Invalid Admin Credentials');
+                else window.alert('Invalid Admin Credentials');
             } 
             else if (mode === 'register') {
                 // School Owner Registration
@@ -865,7 +865,7 @@ const Auth = ({ onLogin, onParent }) => {
 
                     await supabase.from('profiles').insert({ id: user.id, full_name: form.name, role: 'admin', school_id: school.id });
                     await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
-                    alert("School Created! Login now."); setMode('login');
+                    window.alert("School Created! Login now."); setMode('login');
                 } 
                 // Teacher Registration
                 else {
@@ -873,14 +873,14 @@ const Auth = ({ onLogin, onParent }) => {
                      if (!sch) throw new Error('Invalid School Code');
                      const { data: { user } } = await supabase.auth.signUp({ email: form.email, password: form.password });
                      await supabase.from('profiles').insert({ id: user.id, full_name: form.name, role: 'teacher', school_id: sch.id });
-                     alert("Teacher Registered! Login now."); setMode('login');
+                     window.alert("Teacher Registered! Login now."); setMode('login');
                 }
             } 
             else {
                 const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
                 if (error) throw error;
             }
-        } catch (err) { alert(err.message); }
+        } catch (err) { window.alert(err.message); }
         setLoading(false);
     };
 
@@ -931,10 +931,10 @@ const ParentPortal = ({ onBack }) => {
             .select('*, schools(*), classes(*), comments(*), results(*, subjects(*))')
             .eq('admission_no', creds.adm).eq('parent_pin', creds.pin).single();
 
-        if (error || !stu) return alert('Invalid Admission No or PIN');
+        if (error || !stu) return window.alert('Invalid Admission No or PIN');
 
         // Check if approved
-        if (!stu.comments?.[0]?.principal_comment) return alert('Result not yet approved by Principal.');
+        if (!stu.comments?.[0]?.principal_comment) return window.alert('Result not yet approved by Principal.');
 
         // Calculate Totals for PDF
         const processed = stu.results.map(r => ({
