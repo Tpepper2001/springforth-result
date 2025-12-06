@@ -9,9 +9,12 @@ import {
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
-// Replace with your project details if not already set
-const supabaseUrl = 'https://xtciiatfetqecsfxoicq.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0Y2lpYXRmZXRxZWNzZnhvaWNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwNDEyMDIsImV4cCI6MjA4MDYxNzIwMn0.81K9w-XbCHWRWmKkq3rcJHxslx3hs5mGCSNIvyJRMuw';
+// 1. Enter your NEW Project URL
+const supabaseUrl = 'https://xtciiatfetqecsfxoicq.supabase.co'; 
+
+// 2. PASTE YOUR NEW 'ANON PUBLIC' KEY BELOW (From Dashboard -> Project Settings -> API)
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0Y2lpYXRmZXRxZWNzZnhvaWNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwNDEyMDIsImV4cCI6MjA4MDYxNzIwMn0.81K9w-XbCHWRWmKkq3rcJHxslx3hs5mGCSNIvyJRMuw'; 
+
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==================== CONSTANTS & HELPERS ====================
@@ -213,7 +216,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       const { data: cls } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', s.id);
       setClasses(cls || []);
 
-      // Fetch students with their comment status to check if they are locked/submitted
       const { data: stu } = await supabase.from('students')
         .select('*, classes(name), comments(submission_status, principal_comment)')
         .eq('school_id', s.id)
@@ -296,9 +298,10 @@ const SchoolAdmin = ({ profile, onLogout }) => {
   const approveResult = async (id, comment) => {
       await supabase.from('comments').update({ principal_comment: comment }).eq('id', id);
       setApprovals(prev => prev.filter(x => x.id !== id));
+      fetchSchoolData(); // Refresh list to show unlocked status properly in Students tab
   };
 
-  // UNLOCK FUNCTION: Allows teacher to edit again
+  // UNLOCK FUNCTION
   const unlockResult = async (studentId) => {
       if(!window.confirm("Unlock this result? This will revert the status to 'draft' and remove principal approval, allowing the teacher to edit again.")) return;
       
@@ -319,7 +322,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
-      {/* Sidebar */}
       <div className="w-64 bg-slate-900 text-white flex flex-col p-4">
         <h2 className="text-xl font-bold mb-8 flex items-center gap-2"><School /> Admin Panel</h2>
         <nav className="space-y-2 flex-1">
@@ -335,7 +337,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         <button onClick={onLogout} className="flex items-center gap-2 text-red-400 mt-auto"><LogOut size={18}/> Logout</button>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 p-8 overflow-y-auto">
         {activeTab === 'dashboard' && (
            <div>
@@ -431,12 +432,12 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                         <button onClick={() => {navigator.clipboard.writeText(s.parent_pin); window.alert('PIN Copied')}} className="text-blue-600 hover:bg-blue-50 p-1 rounded" title="Copy PIN"><Copy size={16}/></button>
                                         
                                         {isLocked && (
-                                            <button onClick={() => unlockResult(s.id)} className="text-orange-600 hover:bg-orange-50 p-1 rounded" title="Unlock Result (Allow Edit)">
+                                            <button onClick={() => unlockResult(s.id)} className="text-orange-600 hover:bg-orange-50 p-1 rounded" title="Unlock Result">
                                                 <Unlock size={16}/>
                                             </button>
                                         )}
 
-                                        <button onClick={() => deleteStudent(s.id)} className="text-red-600 hover:bg-red-50 p-1 rounded" title="Delete Student"><Trash2 size={16}/></button>
+                                        <button onClick={() => deleteStudent(s.id)} className="text-red-600 hover:bg-red-50 p-1 rounded" title="Delete"><Trash2 size={16}/></button>
                                     </td>
                                 </tr>
                                 )
@@ -575,12 +576,11 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   };
 
   const loadStudentData = async (student) => {
-    // 1. Reset state IMMEDIATELY to prevent seeing previous student's locked status
     setSelectedStudent(null);
     setIsLocked(false); 
     setLoadingStudent(true);
     
-    // 2. Fetch Scores
+    // Fetch Scores
     const { data: res } = await supabase.from('results').select('*').eq('student_id', student.id);
     const scoreMap = {};
     subjects.forEach(s => {
@@ -591,16 +591,14 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     });
     setScores(scoreMap);
 
-    // 3. Fetch Comments/Status
+    // Fetch Comments/Status
     const { data: comm } = await supabase.from('comments').select('*').eq('student_id', student.id).single();
     setComment(comm?.tutor_comment || "");
     setBehaviors(comm?.behaviors ? JSON.parse(comm.behaviors) : {});
     
-    // 4. Determine Lock Status
-    // Lock if Principal has commented (approved) OR if explicitly submitted
+    // Check Status
     const isApproved = comm?.principal_comment && comm.principal_comment.trim() !== '';
-    const isSubmitted = comm?.submission_status === 'submitted'; 
-    
+    const isSubmitted = comm?.submission_status === 'submitted';
     setIsLocked(isApproved || isSubmitted);
 
     setSelectedStudent(student);
@@ -620,7 +618,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const saveResultToDB = async (overrideStatus = null) => {
     if(!selectedStudent) return;
     
-    // Upsert Results
     const resultsPayload = subjects.map(s => {
       const sc = scores[s.id];
       const total = (sc.score_note||0)+(sc.score_cw||0)+(sc.score_hw||0)+(sc.score_test||0)+(sc.score_ca||0)+(sc.score_exam||0);
@@ -637,7 +634,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     await supabase.from('results').delete().eq('student_id', selectedStudent.id);
     await supabase.from('results').insert(resultsPayload);
 
-    // Upsert Comment
     const commentPayload = {
       student_id: selectedStudent.id,
       school_id: curClass.school_id,
@@ -698,11 +694,10 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const submitToPrincipal = async () => {
       try {
           await saveResultToDB('submitted');
-          setIsLocked(true); // Optimistic UI update
+          setIsLocked(true); 
           window.alert('Result Submitted to Principal! Editing is now locked.');
           setShowPreview(false);
       } catch(e) {
-          // Fallback if column missing
           await saveResultToDB();
           window.alert('Result saved and sent for review.');
           setShowPreview(false);
@@ -897,32 +892,52 @@ const Auth = ({ onLogin, onParent }) => {
             else if (mode === 'register') {
                 if (form.pin) { 
                     const { data: pinData } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
-                    if (!pinData) throw new Error('Invalid PIN');
+                    if (!pinData) throw new Error('Invalid or Used PIN');
 
-                    const { data: { user } } = await supabase.auth.signUp({ email: form.email, password: form.password });
-                    if(!user) throw new Error("Signup failed");
+                    const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
+                    if(authError) throw authError;
+                    if(!authData.user) throw new Error("Signup failed. Check console.");
 
-                    const { data: school } = await supabase.from('schools').insert({
-                        owner_id: user.id, name: 'My School', max_students: pinData.student_limit
+                    // Create School
+                    const { data: school, error: schoolError } = await supabase.from('schools').insert({
+                        owner_id: authData.user.id, 
+                        name: 'My School', 
+                        max_students: pinData.student_limit
                     }).select().single();
 
-                    await supabase.from('profiles').insert({ id: user.id, full_name: form.name, role: 'admin', school_id: school.id });
+                    // Check for RLS/Email Confirmation issues
+                    if (schoolError || !school) {
+                        console.error(schoolError);
+                        throw new Error("Failed to create school. Please disable 'Confirm Email' in Supabase Auth settings and try again.");
+                    }
+
+                    await supabase.from('profiles').insert({ id: authData.user.id, full_name: form.name, role: 'admin', school_id: school.id });
                     await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
-                    window.alert("School Created! Login now."); setMode('login');
+                    
+                    window.alert("School Created! Login now."); 
+                    setMode('login');
                 } 
                 else {
                      const { data: sch } = await supabase.from('schools').select('id').eq('id', form.schoolCode).single();
                      if (!sch) throw new Error('Invalid School Code');
-                     const { data: { user } } = await supabase.auth.signUp({ email: form.email, password: form.password });
-                     await supabase.from('profiles').insert({ id: user.id, full_name: form.name, role: 'teacher', school_id: sch.id });
-                     window.alert("Teacher Registered! Login now."); setMode('login');
+                     
+                     const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
+                     if(authError) throw authError;
+
+                     await supabase.from('profiles').insert({ id: authData.user.id, full_name: form.name, role: 'teacher', school_id: sch.id });
+                     
+                     window.alert("Teacher Registered! Login now."); 
+                     setMode('login');
                 }
             } 
             else {
                 const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
                 if (error) throw error;
             }
-        } catch (err) { window.alert(err.message); }
+        } catch (err) { 
+            console.error(err);
+            window.alert(err.message); 
+        }
         setLoading(false);
     };
 
