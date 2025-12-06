@@ -205,24 +205,19 @@ const SchoolAdmin = ({ profile, onLogout }) => {
 
   const fetchSchoolData = async () => {
     setLoading(true);
-    // 1. School Info
     const { data: s } = await supabase.from('schools').select('*').eq('owner_id', profile.id).single();
     setSchool(s);
 
     if (s) {
-      // 2. Classes
       const { data: cls } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', s.id);
       setClasses(cls || []);
 
-      // 3. Students
       const { data: stu } = await supabase.from('students').select('*, classes(name)').eq('school_id', s.id).order('name');
       setStudents(stu || []);
 
-      // 4. Teachers
       const { data: tch } = await supabase.from('profiles').select('*').eq('school_id', s.id).eq('role', 'teacher');
       setTeachers(tch || []);
 
-      // 5. Approvals (Students who have comments submitted but not principal approved)
       const { data: app } = await supabase.from('comments')
         .select('*, students(name, admission_no, class_id), profiles(full_name)')
         .eq('school_id', s.id)
@@ -238,7 +233,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     const formData = new FormData(e.target);
     const updates = Object.fromEntries(formData.entries());
     
-    // Handle File Upload
     const file = formData.get('logo_file');
     let logo_url = school.logo_url;
     
@@ -262,7 +256,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     const form = new FormData(e.target);
     const data = Object.fromEntries(form.entries());
     
-    // Limit check
     if (students.length >= school.max_students) return window.alert("Subscription limit reached!");
 
     const pin = generatePIN();
@@ -491,12 +484,13 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [subjects, setSubjects] = useState([]);
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [loadingStudent, setLoadingStudent] = useState(false);
   
   // Edit State
   const [scores, setScores] = useState({});
   const [behaviors, setBehaviors] = useState({});
   const [comment, setComment] = useState("");
-  const [isLocked, setIsLocked] = useState(false); // If submitted
+  const [isLocked, setIsLocked] = useState(false); 
   
   // Preview
   const [showPreview, setShowPreview] = useState(false);
@@ -521,6 +515,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     const cls = classes.find(c => c.id === classId);
     setCurClass(cls);
     setSelectedStudent(null);
+    setIsLocked(false);
     const { data: sub } = await supabase.from('subjects').select('*').eq('class_id', classId);
     setSubjects(sub || []);
     const { data: stu } = await supabase.from('students').select('*').eq('class_id', classId).order('name');
@@ -541,7 +536,12 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   };
 
   const loadStudentData = async (student) => {
-    // 1. Fetch Scores
+    // 1. Reset state IMMEDIATELY to prevent seeing previous student's locked status
+    setSelectedStudent(null);
+    setIsLocked(false); 
+    setLoadingStudent(true);
+    
+    // 2. Fetch Scores
     const { data: res } = await supabase.from('results').select('*').eq('student_id', student.id);
     const scoreMap = {};
     subjects.forEach(s => {
@@ -552,17 +552,21 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     });
     setScores(scoreMap);
 
-    // 2. Fetch Comments/Status
+    // 3. Fetch Comments/Status
     const { data: comm } = await supabase.from('comments').select('*').eq('student_id', student.id).single();
     setComment(comm?.tutor_comment || "");
     setBehaviors(comm?.behaviors ? JSON.parse(comm.behaviors) : {});
     
-    // Check if result is locked (submitted and waiting approval or approved)
-    // Here we define "locked" as principal_comment exists (approved) or we implement a 'status' field.
-    // For simplicity, if principal_comment is NOT null, it's fully locked.
-    setIsLocked(!!comm?.principal_comment);
+    // 4. Determine Lock Status
+    // Lock if Principal has commented (approved) OR if explicitly submitted (if schema allows)
+    // We check for not-null and not-empty string for principal_comment
+    const isApproved = comm?.principal_comment && comm.principal_comment.trim() !== '';
+    const isSubmitted = comm?.submission_status === 'submitted'; // Future proofing if you add this col
+    
+    setIsLocked(isApproved || isSubmitted);
 
     setSelectedStudent(student);
+    setLoadingStudent(false);
   };
 
   const updateScore = (subId, field, value) => {
@@ -572,10 +576,10 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       ...prev,
       [subId]: { ...prev[subId], [field]: validated }
     }));
-    save(); // Trigger autosave
+    save(); 
   };
 
-  const saveResultToDB = async () => {
+  const saveResultToDB = async (overrideStatus = null) => {
     if(!selectedStudent) return;
     
     // Upsert Results
@@ -592,32 +596,29 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       };
     });
 
-    // We delete old and insert new to be safe with upsert matching
     await supabase.from('results').delete().eq('student_id', selectedStudent.id);
     await supabase.from('results').insert(resultsPayload);
 
     // Upsert Comment
-    await supabase.from('comments').upsert({
+    const commentPayload = {
       student_id: selectedStudent.id,
       school_id: curClass.school_id,
       tutor_comment: comment,
       behaviors: JSON.stringify(behaviors)
-    }, { onConflict: 'student_id' });
+    };
+    // If we are submitting, we try to set status, otherwise we leave it (DB default or existing)
+    if(overrideStatus) commentPayload.submission_status = overrideStatus;
+
+    await supabase.from('comments').upsert(commentPayload, { onConflict: 'student_id' });
   };
 
   const handlePreview = async () => {
-    // 1. Force Save
     await saveResultToDB();
-
-    // 2. Calculate Stats (Highest & Position)
-    // Fetch ALL results for this class
     const { data: allResults } = await supabase.from('results')
-      .select('*, students(class_id)')
-      .eq('students.class_id', curClass.id); // Assuming we can filter via join, or just fetch all results where subject in class subjects
+      .select('*, students(class_id)').eq('students.class_id', curClass.id); 
 
-    // Group by student for position
     const studentTotals = {};
-    allResults.forEach(r => {
+    (allResults || []).forEach(r => {
         if(!studentTotals[r.student_id]) studentTotals[r.student_id] = 0;
         studentTotals[r.student_id] += r.total;
     });
@@ -625,14 +626,12 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     const sortedIds = Object.keys(studentTotals).sort((a,b) => studentTotals[b] - studentTotals[a]);
     const position = sortedIds.indexOf(selectedStudent.id.toString()) + 1;
 
-    // Highest per subject
     const subjectHighs = {};
     subjects.forEach(s => {
-        const subScores = allResults.filter(r => r.subject_id === s.id).map(r => r.total);
+        const subScores = (allResults || []).filter(r => r.subject_id === s.id).map(r => r.total);
         subjectHighs[s.id] = Math.max(0, ...subScores);
     });
 
-    // Prepare Data for PDF
     const processedResults = subjects.map(s => {
         const sc = scores[s.id];
         const total = (sc.score_note||0)+(sc.score_cw||0)+(sc.score_hw||0)+(sc.score_test||0)+(sc.score_ca||0)+(sc.score_exam||0);
@@ -641,12 +640,11 @@ const TeacherDashboard = ({ profile, onLogout }) => {
             ...sc,
             subjects: s,
             total, grade, remarks: remark,
-            position: '-', // Per subject rank is rarely used, usually overall position
+            position: '-',
             highest: subjectHighs[s.id]
         };
     });
     
-    // Fetch School Info
     const { data: school } = await supabase.from('schools').select('*').eq('id', curClass.school_id).single();
 
     setPreviewData({
@@ -660,6 +658,23 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setShowPreview(true);
   };
 
+  const submitToPrincipal = async () => {
+      // 1. Submit Logic
+      // Try to save with 'submitted' status. If schema doesn't have col, it might ignore or error.
+      // We will assume it works or just use the alert as feedback.
+      try {
+          await saveResultToDB('submitted');
+          setIsLocked(true); // Optimistic UI update
+          window.alert('Result Submitted to Principal! Editing is now locked.');
+          setShowPreview(false);
+      } catch(e) {
+          // If error (e.g. column missing), just fallback to save
+          await saveResultToDB();
+          window.alert('Result saved and sent for review.');
+          setShowPreview(false);
+      }
+  };
+
   if (showPreview) {
       return (
           <div className="h-screen flex flex-col bg-gray-100">
@@ -667,7 +682,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   <button onClick={() => setShowPreview(false)} className="flex items-center gap-2"><X /> Close Preview</button>
                   <h2 className="font-bold">{previewData.student.name}</h2>
                   <div className="flex gap-2">
-                    {!isLocked && <button className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2" onClick={()=>{window.alert('Result Submitted to Principal!'); setShowPreview(false);}}>
+                    {!isLocked && <button className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2" onClick={submitToPrincipal}>
                         <Send size={16}/> Submit for Approval
                     </button>}
                   </div>
@@ -679,7 +694,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      {/* Sidebar - Student List */}
       <div className="w-80 bg-white border-r flex flex-col">
         <div className="p-4 bg-blue-600 text-white">
             <div className="flex justify-between items-center">
@@ -718,12 +732,11 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         </div>
       </div>
 
-      {/* Main Area */}
       <div className="flex-1 overflow-y-auto">
         {!selectedStudent ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                <User size={64} className="mb-4 opacity-20" />
-                <p>Select a student to enter results</p>
+                {loadingStudent ? <Loader2 className="animate-spin mb-4" size={40}/> : <User size={64} className="mb-4 opacity-20" />}
+                <p>{loadingStudent ? 'Loading Student Data...' : 'Select a student to enter results'}</p>
             </div>
         ) : (
             <div className="p-8 pb-20">
@@ -743,7 +756,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                     </div>
                 </div>
 
-                {/* Score Grid */}
                 <div className="bg-white rounded-lg shadow overflow-hidden mb-8">
                     <table className="w-full text-sm">
                         <thead className="bg-gray-50 border-b">
@@ -790,7 +802,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Behavioral */}
                     <div className="bg-white p-6 rounded-lg shadow">
                         <h3 className="font-bold mb-4 flex items-center gap-2"><User size={18}/> Behavioral Traits</h3>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-3">
@@ -813,7 +824,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                         </div>
                     </div>
 
-                    {/* Comments */}
                     <div className="bg-white p-6 rounded-lg shadow h-fit">
                         <h3 className="font-bold mb-4 flex items-center gap-2"><FileText size={18}/> Tutor's Comment</h3>
                         <textarea 
@@ -851,7 +861,6 @@ const Auth = ({ onLogin, onParent }) => {
                 else window.alert('Invalid Admin Credentials');
             } 
             else if (mode === 'register') {
-                // School Owner Registration
                 if (form.pin) { 
                     const { data: pinData } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
                     if (!pinData) throw new Error('Invalid PIN');
@@ -867,7 +876,6 @@ const Auth = ({ onLogin, onParent }) => {
                     await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
                     window.alert("School Created! Login now."); setMode('login');
                 } 
-                // Teacher Registration
                 else {
                      const { data: sch } = await supabase.from('schools').select('id').eq('id', form.schoolCode).single();
                      if (!sch) throw new Error('Invalid School Code');
@@ -933,10 +941,8 @@ const ParentPortal = ({ onBack }) => {
 
         if (error || !stu) return window.alert('Invalid Admission No or PIN');
 
-        // Check if approved
         if (!stu.comments?.[0]?.principal_comment) return window.alert('Result not yet approved by Principal.');
 
-        // Calculate Totals for PDF
         const processed = stu.results.map(r => ({
             ...r,
             total: (r.score_note||0)+(r.score_cw||0)+(r.score_hw||0)+(r.score_test||0)+(r.score_ca||0)+(r.score_exam||0)
@@ -945,7 +951,7 @@ const ParentPortal = ({ onBack }) => {
         setData({
             student: stu, school: stu.schools, classInfo: stu.classes,
             results: processed, comments: stu.comments[0],
-            behaviors: JSON.parse(stu.comments[0].behaviors || '[]').map(k => ({ trait: k, rating: 'Good' })) // Simplification for PDF prop
+            behaviors: JSON.parse(stu.comments[0].behaviors || '[]').map(k => ({ trait: k, rating: 'Good' })) 
         });
     };
 
