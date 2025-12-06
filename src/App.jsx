@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
+// Replace these with your actual keys if they differ
 const supabaseUrl = 'https://xtciiatfetqecsfxoicq.supabase.co'; 
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0Y2lpYXRmZXRxZWNzZnhvaWNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwNDEyMDIsImV4cCI6MjA4MDYxNzIwMn0.81K9w-XbCHWRWmKkq3rcJHxslx3hs5mGCSNIvyJRMuw'; 
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -32,7 +33,13 @@ const calculateGrade = (total) => {
 
 const generatePIN = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-// Helper to convert image URL to Base64 for PDF rendering
+// Generate Auto Admission Number (Format: Year/4-Digit-Random)
+const generateAdmissionNumber = () => {
+    const year = new Date().getFullYear();
+    const random = Math.floor(1000 + Math.random() * 9000); // Ensures 4 digits
+    return `${year}/${random}`;
+};
+
 const imageUrlToBase64 = async (url) => {
     if (!url) return null;
     try {
@@ -70,33 +77,34 @@ const useAutoSave = (callback, delay = 2000) => {
 
 // ==================== PDF COMPONENT ====================
 const pdfStyles = StyleSheet.create({
-  page: { padding: 20, fontFamily: 'Helvetica', fontSize: 8 },
+  page: { padding: 30, fontFamily: 'Helvetica', fontSize: 9 },
   watermarkContainer: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     justifyContent: 'center', alignItems: 'center', zIndex: -1
   },
-  watermarkImage: { width: 300, height: 300, opacity: 0.1 },
-  headerBox: { flexDirection: 'row', border: '2px solid #000', padding: 10, marginBottom: 5, alignItems: 'center' },
-  logo: { width: 60, height: 60, marginRight: 10, objectFit: 'contain' },
+  watermarkImage: { width: 350, height: 350, opacity: 0.08 },
+  headerBox: { flexDirection: 'row', borderBottom: '2px solid #000', paddingBottom: 10, marginBottom: 10, alignItems: 'center' },
+  logo: { width: 70, height: 70, marginRight: 15, objectFit: 'contain' },
   headerText: { flex: 1, alignItems: 'center' },
-  schoolName: { fontSize: 16, fontWeight: 'bold', textTransform: 'uppercase' },
-  schoolDetails: { fontSize: 7, textAlign: 'center' },
-  termTitle: { fontSize: 9, fontWeight: 'bold', marginTop: 3, textDecoration: 'underline' },
-  infoGrid: { flexDirection: 'row', marginTop: 5 },
-  infoBox: { flex: 1, border: '1px solid #000', padding: 3, marginRight: 2, backgroundColor: '#f0f0f0' },
-  infoLabel: { fontSize: 7, fontWeight: 'bold' },
-  infoValue: { fontSize: 8 },
-  table: { width: '100%', border: '1px solid #000', marginTop: 5 },
-  tableHeader: { flexDirection: 'row', backgroundColor: '#f0f0f0', borderBottom: '1px solid #000' },
-  tableRow: { flexDirection: 'row', borderBottom: '1px solid #000', minHeight: 22 },
-  cell: { borderRight: '1px solid #000', padding: 3, fontSize: 7 },
-  cellCenter: { alignItems: 'center', justifyContent: 'center' },
+  schoolName: { fontSize: 20, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 4 },
+  schoolAddress: { fontSize: 9, textAlign: 'center', marginBottom: 2 },
+  schoolContact: { fontSize: 9, textAlign: 'center', fontStyle: 'italic' },
+  termTitle: { fontSize: 12, fontWeight: 'bold', marginTop: 8, textDecoration: 'underline', textTransform: 'uppercase' },
+  infoGrid: { flexDirection: 'row', marginTop: 5, justifyContent: 'space-between' },
+  infoBox: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  infoLabel: { fontWeight: 'bold', marginRight: 5 },
+  infoValue: { },
+  table: { width: '100%', border: '1px solid #000', marginTop: 10 },
+  tableHeader: { flexDirection: 'row', backgroundColor: '#e0e0e0', borderBottom: '1px solid #000', paddingVertical: 4 },
+  tableRow: { flexDirection: 'row', borderBottom: '1px solid #000', minHeight: 20, alignItems: 'center' },
+  cell: { borderRight: '1px solid #000', padding: 4, fontSize: 8 },
+  cellCenter: { alignItems: 'center', justifyContent: 'center', textAlign: 'center' },
   colSN: { width: '5%' }, 
-  colSubject: { width: '25%' }, 
+  colSubject: { width: '30%' }, 
   colTotal: { width: '10%', fontWeight: 'bold' }, 
   colGrade: { width: '10%' },
   colRemark: { width: '15%', borderRight: 0 },
-  footer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 },
+  footer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 30 },
   signatureBox: { width: '40%', alignItems: 'center', borderTop: '1px solid #000', paddingTop: 5 },
 });
 
@@ -108,7 +116,10 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
     ? config.filter(f => f.code.toLowerCase() !== 'exam') 
     : config;
 
-  const scoreColWidth = `${35 / (displayFields.length || 1)}%`;
+  // Calculate dynamic column width
+  const fixedWidths = 5 + 30 + 10 + (isMidTerm ? 0 : 10) + 15; // SN + Sub + Total + Grade + Remark
+  const remainingWidth = 100 - fixedWidths;
+  const scoreColWidth = displayFields.length > 0 ? `${remainingWidth / displayFields.length}%` : '0%';
 
   const processedResults = results.map(r => {
     const rawScores = r.scores || {};
@@ -138,29 +149,40 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
           {logoBase64 ? <PDFImage src={logoBase64} style={pdfStyles.logo} /> : <View style={{width: 60}} />}
           <View style={pdfStyles.headerText}>
             <Text style={pdfStyles.schoolName}>{school?.name || 'SCHOOL NAME'}</Text>
-            <Text style={pdfStyles.schoolDetails}>{school?.address}</Text>
-            <Text style={pdfStyles.schoolDetails}>{school?.contact} | {school?.email}</Text>
+            
+            {/* ADDRESS AND CONTACT INFO */}
+            {school?.address && <Text style={pdfStyles.schoolAddress}>{school.address}</Text>}
+            <Text style={pdfStyles.schoolContact}>
+               {school?.email ? `Email: ${school.email}` : ''} 
+               {school?.email && school?.contact ? ' | ' : ''} 
+               {school?.contact ? `Tel: ${school.contact}` : ''}
+            </Text>
+
             <Text style={pdfStyles.termTitle}>
               {isMidTerm ? 'MID-TERM' : 'TERM'} REPORT {school?.current_session || ''} SESSION
             </Text>
-            <Text style={{fontSize: 8}}>{school?.current_term}</Text>
+            <Text style={{fontSize: 9}}>{school?.current_term}</Text>
           </View>
         </View>
 
-        <View style={pdfStyles.infoGrid}>
-          <View style={pdfStyles.infoBox}><Text style={pdfStyles.infoLabel}>NAME:</Text><Text style={pdfStyles.infoValue}>{student.name}</Text></View>
-          <View style={pdfStyles.infoBox}><Text style={pdfStyles.infoLabel}>ADM NO:</Text><Text style={pdfStyles.infoValue}>{student.admission_no}</Text></View>
-          <View style={pdfStyles.infoBox}><Text style={pdfStyles.infoLabel}>CLASS:</Text><Text style={pdfStyles.infoValue}>{classInfo?.name}</Text></View>
+        {/* STUDENT DETAILS GRID */}
+        <View style={{border: '1px solid #000', padding: 5, marginBottom: 5}}>
+            <View style={pdfStyles.infoGrid}>
+                <View style={[pdfStyles.infoBox, {width: '50%'}]}><Text style={pdfStyles.infoLabel}>NAME:</Text><Text style={pdfStyles.infoValue}>{student.name}</Text></View>
+                <View style={[pdfStyles.infoBox, {width: '25%'}]}><Text style={pdfStyles.infoLabel}>CLASS:</Text><Text style={pdfStyles.infoValue}>{classInfo?.name}</Text></View>
+                <View style={[pdfStyles.infoBox, {width: '25%'}]}><Text style={pdfStyles.infoLabel}>ADM NO:</Text><Text style={pdfStyles.infoValue}>{student.admission_no}</Text></View>
+            </View>
+            
+            {!isMidTerm && (
+            <View style={pdfStyles.infoGrid}>
+                <View style={[pdfStyles.infoBox, {width: '25%'}]}><Text style={pdfStyles.infoLabel}>GENDER:</Text><Text style={pdfStyles.infoValue}>{student.gender}</Text></View>
+                <View style={[pdfStyles.infoBox, {width: '25%'}]}><Text style={pdfStyles.infoLabel}>AVERAGE:</Text><Text style={pdfStyles.infoValue}>{average}%</Text></View>
+                <View style={[pdfStyles.infoBox, {width: '25%'}]}><Text style={pdfStyles.infoLabel}>GRADE:</Text><Text style={pdfStyles.infoValue}>{calculateGrade(average).grade}</Text></View>
+            </View>
+            )}
         </View>
-        
-        {!isMidTerm && (
-        <View style={pdfStyles.infoGrid}>
-          <View style={pdfStyles.infoBox}><Text style={pdfStyles.infoLabel}>AVG:</Text><Text style={pdfStyles.infoValue}>{average}%</Text></View>
-          <View style={pdfStyles.infoBox}><Text style={pdfStyles.infoLabel}>GRADE:</Text><Text style={pdfStyles.infoValue}>{calculateGrade(average).grade}</Text></View>
-          <View style={pdfStyles.infoBox}><Text style={pdfStyles.infoLabel}>GENDER:</Text><Text style={pdfStyles.infoValue}>{student.gender}</Text></View>
-        </View>
-        )}
 
+        {/* RESULTS TABLE */}
         <View style={pdfStyles.table}>
           <View style={pdfStyles.tableHeader}>
             <Text style={[pdfStyles.cell, pdfStyles.colSN, pdfStyles.cellCenter]}>S/N</Text>
@@ -191,38 +213,39 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
         </View>
 
         {!isMidTerm && (
-        <View style={{marginTop: 10, flexDirection: 'row'}}>
-            <View style={{width: '60%', marginRight: 10}}>
-                <Text style={{fontSize: 9, fontWeight: 'bold', marginBottom: 4}}>BEHAVIOURAL REPORT</Text>
+        <View style={{marginTop: 15, flexDirection: 'row'}}>
+            <View style={{width: '65%', marginRight: 15}}>
+                <Text style={{fontSize: 9, fontWeight: 'bold', marginBottom: 4, textDecoration: 'underline'}}>BEHAVIOURAL REPORT</Text>
                 <View style={{flexDirection: 'row', flexWrap: 'wrap', border: '1px solid #000', padding: 5}}>
                     {BEHAVIORAL_TRAITS.map(t => (
-                         <Text key={t} style={{width: '50%', fontSize: 7, marginBottom: 2}}>{t}: {behaviorMap[t] || 'Good'}</Text>
+                         <Text key={t} style={{width: '50%', fontSize: 8, marginBottom: 3}}>{t}: {behaviorMap[t] || 'Good'}</Text>
                     ))}
                 </View>
             </View>
-            <View style={{width: '40%'}}>
-                 <Text style={{fontSize: 9, fontWeight: 'bold', marginBottom: 4}}>SUMMARY</Text>
+            <View style={{width: '35%'}}>
+                 <Text style={{fontSize: 9, fontWeight: 'bold', marginBottom: 4, textDecoration: 'underline'}}>PERFORMANCE SUMMARY</Text>
                  <View style={{border: '1px solid #000', padding: 5}}>
-                     <Text style={{fontSize: 7}}>Total Score: {totalScore}</Text>
-                     <Text style={{fontSize: 7}}>No. of Subjects: {results.length}</Text>
+                     <Text style={{fontSize: 8, marginBottom: 3}}>Total Obtained: {totalScore}</Text>
+                     <Text style={{fontSize: 8, marginBottom: 3}}>Subjects Taken: {results.length}</Text>
+                     <Text style={{fontSize: 8, marginBottom: 3}}>Class Average: {average}%</Text>
                  </View>
             </View>
         </View>
         )}
 
-        <View style={{marginTop: 10, border: '1px solid #000', padding: 5}}>
+        <View style={{marginTop: 15, border: '1px solid #000', padding: 5, minHeight: 35}}>
             <Text style={{fontSize: 8, fontWeight: 'bold'}}>FORM TUTOR'S COMMENT:</Text>
-            <Text style={{fontSize: 7, marginTop: 2}}>{comments?.tutor_comment || 'No comment.'}</Text>
+            <Text style={{fontSize: 8, marginTop: 2}}>{comments?.tutor_comment || 'No comment.'}</Text>
         </View>
 
-        <View style={{marginTop: 5, border: '1px solid #000', padding: 5}}>
+        <View style={{marginTop: 5, border: '1px solid #000', padding: 5, minHeight: 35}}>
             <Text style={{fontSize: 8, fontWeight: 'bold'}}>PRINCIPAL'S COMMENT:</Text>
-            <Text style={{fontSize: 7, marginTop: 2}}>{comments?.principal_comment || 'Result Verified.'}</Text>
+            <Text style={{fontSize: 8, marginTop: 2}}>{comments?.principal_comment || 'Result Verified and Approved.'}</Text>
         </View>
 
         <View style={pdfStyles.footer}>
-            <View style={pdfStyles.signatureBox}><Text style={{fontSize: 7}}>FORM TUTOR SIGNATURE</Text></View>
-            <View style={pdfStyles.signatureBox}><Text style={{fontSize: 7}}>PRINCIPAL SIGNATURE</Text></View>
+            <View style={pdfStyles.signatureBox}><Text style={{fontSize: 8, fontWeight: 'bold'}}>FORM TUTOR SIGNATURE</Text></View>
+            <View style={pdfStyles.signatureBox}><Text style={{fontSize: 8, fontWeight: 'bold'}}>PRINCIPAL SIGNATURE</Text></View>
         </View>
       </Page>
     </Document>
@@ -276,7 +299,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         }
     }
     
-    // FIX: Exclude the file object from the database update payload
     const { logo_file, ...otherUpdates } = Object.fromEntries(formData.entries());
     
     const { error } = await supabase.from('schools').update({ ...otherUpdates, logo_url }).eq('id', school.id);
@@ -309,13 +331,28 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     e.preventDefault();
     const form = new FormData(e.target);
     const data = Object.fromEntries(form.entries());
+    
     if (students.length >= school.max_students) return window.alert("Limit reached!");
+    
     const pin = generatePIN();
+    // AUTOMATIC ADMISSION NUMBER GENERATION
+    const autoAdmissionNo = generateAdmissionNumber();
+
     const { error } = await supabase.from('students').insert({
-      school_id: school.id, name: data.name, admission_no: data.admission_no,
-      gender: data.gender, class_id: data.class_id, parent_pin: pin
+      school_id: school.id, 
+      name: data.name, 
+      admission_no: autoAdmissionNo, // Using generated value
+      gender: data.gender, 
+      class_id: data.class_id, 
+      parent_pin: pin
     });
-    if (error) window.alert(error.message); else { window.alert(`Added! PIN: ${pin}`); e.target.reset(); fetchSchoolData(); }
+    
+    if (error) window.alert(error.message); 
+    else { 
+        window.alert(`Student Added! \nAdm No: ${autoAdmissionNo} \nPIN: ${pin}`); 
+        e.target.reset(); 
+        fetchSchoolData(); 
+    }
   };
 
   const deleteStudent = async (id) => {
@@ -412,18 +449,40 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                 <div className="bg-white p-6 rounded shadow">
                     <h2 className="text-xl font-bold mb-4">School Details</h2>
                     <form onSubmit={updateSchool} className="space-y-4">
+                        <label className="block text-xs font-bold text-gray-500">SCHOOL NAME</label>
                         <input name="name" defaultValue={school?.name} className="w-full p-2 border rounded" placeholder="School Name" />
-                        <div className="grid grid-cols-2 gap-4">
-                            <input name="current_term" defaultValue={school?.current_term} className="border p-2 rounded" />
-                            <input name="current_session" defaultValue={school?.current_session} className="border p-2 rounded" />
+                        
+                        {/* NEW ADDRESS & CONTACT FIELDS */}
+                        <label className="block text-xs font-bold text-gray-500 mt-2">ADDRESS</label>
+                        <input name="address" defaultValue={school?.address} className="w-full p-2 border rounded" placeholder="Full School Address" />
+                        
+                        <div className="grid grid-cols-2 gap-4 mt-2">
+                             <div>
+                                <label className="block text-xs font-bold text-gray-500">PHONE CONTACT</label>
+                                <input name="contact" defaultValue={school?.contact} className="w-full p-2 border rounded" placeholder="Phone Number" />
+                             </div>
+                             <div>
+                                <label className="block text-xs font-bold text-gray-500">EMAIL CONTACT</label>
+                                <input name="email" defaultValue={school?.email} className="w-full p-2 border rounded" placeholder="School Email" />
+                             </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mt-2">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500">TERM</label>
+                                <input name="current_term" defaultValue={school?.current_term} className="w-full border p-2 rounded" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500">SESSION</label>
+                                <input name="current_session" defaultValue={school?.current_session} className="w-full border p-2 rounded" />
+                            </div>
                         </div>
                         <div>
-                            <label className="block text-sm font-bold mb-1">School Logo</label>
+                            <label className="block text-sm font-bold mb-1 mt-2">School Logo</label>
                             <input type="file" name="logo_file" className="text-sm border p-2 w-full rounded" />
-                            {/* PREVIEW LOGO TO DEBUG */}
                             {school?.logo_url && <img src={school.logo_url} alt="Logo" className="h-20 mt-2 border p-1" />}
                         </div>
-                        <button disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded w-full">
+                        <button disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded w-full mt-4">
                             {loading ? 'Saving...' : 'Save Changes'}
                         </button>
                     </form>
@@ -451,13 +510,14 @@ const SchoolAdmin = ({ profile, onLogout }) => {
             <div>
                 <h2 className="text-xl font-bold mb-4">Manage Students</h2>
                 <div className="bg-white p-4 rounded shadow mb-6">
-                    <form onSubmit={addStudent} className="grid grid-cols-5 gap-3 items-end">
+                    <form onSubmit={addStudent} className="grid grid-cols-4 gap-3 items-end">
+                        {/* REMOVED MANUAL ADMISSION NUMBER INPUT */}
                         <input name="name" placeholder="Full Name" className="border p-2 rounded" required />
-                        <input name="admission_no" placeholder="Adm No" className="border p-2 rounded" required />
                         <select name="gender" className="border p-2 rounded"><option>Male</option><option>Female</option></select>
                         <select name="class_id" className="border p-2 rounded" required>{classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
-                        <button className="bg-green-600 text-white p-2 rounded">Register</button>
+                        <button className="bg-green-600 text-white p-2 rounded">Register Student</button>
                     </form>
+                    <p className="text-xs text-gray-500 mt-2">* Admission Numbers are generated automatically (Year/Random)</p>
                 </div>
                 <div className="bg-white rounded shadow overflow-hidden">
                     <table className="w-full text-left text-sm">
@@ -477,7 +537,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                 return (
                                 <tr key={s.id} className="border-b hover:bg-gray-50">
                                     <td className="p-3">{s.name}</td>
-                                    <td className="p-3">{s.admission_no}</td>
+                                    <td className="p-3 font-mono">{s.admission_no}</td>
                                     <td className="p-3">{s.classes?.name}</td>
                                     <td className="p-3 font-mono bg-yellow-50">{s.parent_pin}</td>
                                     <td className="p-3">
