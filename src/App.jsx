@@ -10,7 +10,7 @@ import {
 
 // ==================== SUPABASE CONFIG ====================
 const supabaseUrl = 'https://xtciiatfetqecsfxoicq.supabase.co'; 
-const supabaseKey = 'PASTE_YOUR_NEW_ANON_KEY_HERE'; 
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0Y2lpYXRmZXRxZWNzZnhvaWNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwNDEyMDIsImV4cCI6MjA4MDYxNzIwMn0.81K9w-XbCHWRWmKkq3rcJHxslx3hs5mGCSNIvyJRMuw'; 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==================== CONSTANTS & HELPERS ====================
