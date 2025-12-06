@@ -54,7 +54,16 @@ const useAutoSave = (callback, delay = 2000) => {
 // ==================== PDF COMPONENT (With Watermark) ====================
 const pdfStyles = StyleSheet.create({
   page: { padding: 20, fontFamily: 'Helvetica', fontSize: 8 },
-  watermark: { position: 'absolute', top: 200, left: 100, width: 400, height: 400, opacity: 0.1, zIndex: -1 },
+  // Center watermark
+  watermark: { 
+    position: 'absolute', 
+    top: '30%', 
+    left: '25%', 
+    width: '50%', 
+    height: 'auto', 
+    opacity: 0.15, // Increased visibility
+    zIndex: -1 
+  },
   headerBox: { flexDirection: 'row', border: '2px solid #000', padding: 10, marginBottom: 5, alignItems: 'center' },
   logo: { width: 60, height: 60, marginRight: 10, objectFit: 'contain' },
   headerText: { flex: 1, alignItems: 'center' },
@@ -105,13 +114,17 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
   const average = (totalScore / (results.length || 1)).toFixed(1);
   const behaviorMap = Object.fromEntries(behaviors.map(b => [b.trait, b.rating]));
 
+  // Cache bust the logo url to prevent CORS issues on fresh uploads
+  const logoUrl = school?.logo_url ? `${school.logo_url}?t=${new Date().getTime()}` : null;
+
   return (
     <Document>
       <Page size="A4" style={pdfStyles.page}>
-        {school?.logo_url && <PDFImage src={school.logo_url} style={pdfStyles.watermark} />}
+        {/* WATERMARK LAYER */}
+        {logoUrl && <PDFImage src={logoUrl} style={pdfStyles.watermark} />}
 
         <View style={pdfStyles.headerBox}>
-          {school?.logo_url ? <PDFImage src={school.logo_url} style={pdfStyles.logo} /> : <View style={{width: 60}} />}
+          {logoUrl ? <PDFImage src={logoUrl} style={pdfStyles.logo} /> : <View style={{width: 60}} />}
           <View style={pdfStyles.headerText}>
             <Text style={pdfStyles.schoolName}>{school?.name || 'SCHOOL NAME'}</Text>
             <Text style={pdfStyles.schoolDetails}>{school?.address}</Text>
@@ -239,17 +252,26 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const updates = Object.fromEntries(formData.entries());
+    
+    // IMAGE UPLOAD LOGIC
     const file = formData.get('logo_file');
     let logo_url = school.logo_url;
+    
     if (file && file.size > 0) {
+        // Sanitize filename to remove spaces and special chars
         const fileExt = file.name.split('.').pop();
-        const fileName = `${school.id}-${Math.random()}.${fileExt}`;
-        const { error } = await supabase.storage.from('school-assets').upload(fileName, file);
+        const safeName = `${school.id}-${Date.now()}.${fileExt}`;
+        
+        const { error } = await supabase.storage.from('school-assets').upload(safeName, file);
         if (!error) {
-            const { data } = supabase.storage.from('school-assets').getPublicUrl(fileName);
+            const { data } = supabase.storage.from('school-assets').getPublicUrl(safeName);
             logo_url = data.publicUrl;
+        } else {
+            console.error(error);
+            alert("Upload failed. Make sure bucket is set to Public.");
         }
     }
+    
     await supabase.from('schools').update({ ...updates, logo_url }).eq('id', school.id);
     window.alert('Updated!');
     fetchSchoolData();
@@ -257,7 +279,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
 
   const addConfigField = async () => {
       if(!newConfig.name || !newConfig.max) return;
-      const code = newConfig.name.toLowerCase().replace(/\s/g, '_');
+      const code = newConfig.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
       const updatedConfig = [...(school.assessment_config || []), { ...newConfig, code }];
       await supabase.from('schools').update({ assessment_config: updatedConfig }).eq('id', school.id);
       setNewConfig({ name: '', max: 10, code: '' });
@@ -379,8 +401,12 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                             <input name="current_term" defaultValue={school?.current_term} className="border p-2 rounded" />
                             <input name="current_session" defaultValue={school?.current_session} className="border p-2 rounded" />
                         </div>
-                        <input type="file" name="logo_file" className="text-sm" />
-                        <button className="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
+                        <div>
+                            <label className="block text-sm font-bold mb-1">School Logo</label>
+                            <input type="file" name="logo_file" className="text-sm border p-2 w-full rounded" />
+                            {school?.logo_url && <img src={school.logo_url} alt="Logo" className="h-16 mt-2 border p-1" />}
+                        </div>
+                        <button className="bg-blue-600 text-white px-4 py-2 rounded">Save Changes</button>
                     </form>
                 </div>
                 <div className="bg-white p-6 rounded shadow">
@@ -530,7 +556,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const loadStudentData = async (student) => {
     setSelectedStudent(null);
     
-    const { data: res } = await supabase.from('results').select('*').eq('student_id', student.id);
+    const { data: res } = await supabase.from('results').select('*, subjects(*)').eq('student_id', student.id);
     const scoreMap = {};
     subjects.forEach(s => {
       const existing = res?.find(r => r.subject_id === s.id);
@@ -821,21 +847,49 @@ const App = () => {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [view, setView] = useState('auth');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (!session) { setProfile(null); setView('auth'); }
+      if(!session) setLoading(false);
     });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (!session) {
+        setProfile(null);
+        setView('auth');
+        setLoading(false);
+      }
+    });
+
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
     if (session) {
-      supabase.from('profiles').select('*').eq('id', session.user.id).single()
-        .then(({ data }) => setProfile(data));
+      const fetchProfile = async () => {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (error || !data) {
+          console.warn("Profile not found. Logging out.");
+          await supabase.auth.signOut();
+          setProfile(null);
+        } else {
+          setProfile(data);
+        }
+        setLoading(false);
+      };
+      fetchProfile();
     }
   }, [session]);
+
+  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin" size={40}/></div>;
 
   if (view === 'central') return <CentralAdmin onLogout={() => setView('auth')} />;
   if (view === 'parent') return <ParentPortal onBack={() => setView('auth')} />;
