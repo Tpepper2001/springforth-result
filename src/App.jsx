@@ -5,10 +5,11 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, Copy, Check, User, Download,
-  X, Eye, CheckCircle, Send, Settings, Users, BookOpen, FileText, Trash2, AlertCircle
+  X, Eye, CheckCircle, Send, Settings, Users, BookOpen, FileText, Trash2, AlertCircle, Unlock
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
+// Replace with your project details if not already set
 const supabaseUrl = 'https://ghlnenmfwlpwlqdrbean.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdobG5lbm1md2xwd2xxZHJiZWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0MTE0MDQsImV4cCI6MjA3OTk4NzQwNH0.rNILUdI035c4wl4kFkZFP4OcIM_t7bNMqktKm25d5Gg';
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -212,7 +213,11 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       const { data: cls } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', s.id);
       setClasses(cls || []);
 
-      const { data: stu } = await supabase.from('students').select('*, classes(name)').eq('school_id', s.id).order('name');
+      // Fetch students with their comment status to check if they are locked/submitted
+      const { data: stu } = await supabase.from('students')
+        .select('*, classes(name), comments(submission_status, principal_comment)')
+        .eq('school_id', s.id)
+        .order('name');
       setStudents(stu || []);
 
       const { data: tch } = await supabase.from('profiles').select('*').eq('school_id', s.id).eq('role', 'teacher');
@@ -222,7 +227,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         .select('*, students(name, admission_no, class_id), profiles(full_name)')
         .eq('school_id', s.id)
         .is('principal_comment', null)
-        .not('tutor_comment', 'is', null);
+        .eq('submission_status', 'submitted');
       setApprovals(app || []);
     }
     setLoading(false);
@@ -291,6 +296,25 @@ const SchoolAdmin = ({ profile, onLogout }) => {
   const approveResult = async (id, comment) => {
       await supabase.from('comments').update({ principal_comment: comment }).eq('id', id);
       setApprovals(prev => prev.filter(x => x.id !== id));
+  };
+
+  // UNLOCK FUNCTION: Allows teacher to edit again
+  const unlockResult = async (studentId) => {
+      if(!window.confirm("Unlock this result? This will revert the status to 'draft' and remove principal approval, allowing the teacher to edit again.")) return;
+      
+      await supabase.from('comments').update({
+          submission_status: 'draft',
+          principal_comment: null
+      }).eq('student_id', studentId);
+      
+      window.alert("Result unlocked.");
+      fetchSchoolData();
+  };
+
+  const deleteStudent = async (id) => {
+      if(!window.confirm("Delete student? This is irreversible.")) return;
+      await supabase.from('students').delete().eq('id', id);
+      fetchSchoolData();
   };
 
   return (
@@ -385,23 +409,38 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                 <th className="p-3">Name</th>
                                 <th className="p-3">Adm No</th>
                                 <th className="p-3">Class</th>
-                                <th className="p-3">Parent PIN</th>
+                                <th className="p-3">Status</th>
                                 <th className="p-3">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {students.map(s => (
+                            {students.map(s => {
+                                const isLocked = s.comments?.[0]?.submission_status === 'submitted' || !!s.comments?.[0]?.principal_comment;
+                                return (
                                 <tr key={s.id} className="border-b hover:bg-gray-50">
                                     <td className="p-3">{s.name}</td>
                                     <td className="p-3">{s.admission_no}</td>
                                     <td className="p-3">{s.classes?.name}</td>
-                                    <td className="p-3 font-mono bg-yellow-50">{s.parent_pin}</td>
                                     <td className="p-3">
-                                        <button onClick={() => {navigator.clipboard.writeText(s.parent_pin); window.alert('PIN Copied')}} className="text-blue-600 mr-2"><Copy size={16}/></button>
-                                        <button className="text-red-600"><Trash2 size={16}/></button>
+                                        {isLocked ? 
+                                            <span className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded">Locked</span> : 
+                                            <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Open</span>
+                                        }
+                                    </td>
+                                    <td className="p-3 flex items-center gap-2">
+                                        <button onClick={() => {navigator.clipboard.writeText(s.parent_pin); window.alert('PIN Copied')}} className="text-blue-600 hover:bg-blue-50 p-1 rounded" title="Copy PIN"><Copy size={16}/></button>
+                                        
+                                        {isLocked && (
+                                            <button onClick={() => unlockResult(s.id)} className="text-orange-600 hover:bg-orange-50 p-1 rounded" title="Unlock Result (Allow Edit)">
+                                                <Unlock size={16}/>
+                                            </button>
+                                        )}
+
+                                        <button onClick={() => deleteStudent(s.id)} className="text-red-600 hover:bg-red-50 p-1 rounded" title="Delete Student"><Trash2 size={16}/></button>
                                     </td>
                                 </tr>
-                            ))}
+                                )
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -558,10 +597,9 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setBehaviors(comm?.behaviors ? JSON.parse(comm.behaviors) : {});
     
     // 4. Determine Lock Status
-    // Lock if Principal has commented (approved) OR if explicitly submitted (if schema allows)
-    // We check for not-null and not-empty string for principal_comment
+    // Lock if Principal has commented (approved) OR if explicitly submitted
     const isApproved = comm?.principal_comment && comm.principal_comment.trim() !== '';
-    const isSubmitted = comm?.submission_status === 'submitted'; // Future proofing if you add this col
+    const isSubmitted = comm?.submission_status === 'submitted'; 
     
     setIsLocked(isApproved || isSubmitted);
 
@@ -606,7 +644,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       tutor_comment: comment,
       behaviors: JSON.stringify(behaviors)
     };
-    // If we are submitting, we try to set status, otherwise we leave it (DB default or existing)
     if(overrideStatus) commentPayload.submission_status = overrideStatus;
 
     await supabase.from('comments').upsert(commentPayload, { onConflict: 'student_id' });
@@ -659,16 +696,13 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   };
 
   const submitToPrincipal = async () => {
-      // 1. Submit Logic
-      // Try to save with 'submitted' status. If schema doesn't have col, it might ignore or error.
-      // We will assume it works or just use the alert as feedback.
       try {
           await saveResultToDB('submitted');
           setIsLocked(true); // Optimistic UI update
           window.alert('Result Submitted to Principal! Editing is now locked.');
           setShowPreview(false);
       } catch(e) {
-          // If error (e.g. column missing), just fallback to save
+          // Fallback if column missing
           await saveResultToDB();
           window.alert('Result saved and sent for review.');
           setShowPreview(false);
