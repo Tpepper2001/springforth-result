@@ -263,12 +263,10 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     e.preventDefault();
     setLoading(true);
     const formData = new FormData(e.target);
-    const updates = Object.fromEntries(formData.entries());
     const file = formData.get('logo_file');
     let logo_url = school.logo_url;
 
     if (file && file.size > 0) {
-        // Unique filename to force refresh
         const fileExt = file.name.split('.').pop();
         const fileName = `${school.id}-${Date.now()}.${fileExt}`;
         const { error } = await supabase.storage.from('school-assets').upload(fileName, file);
@@ -278,15 +276,16 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         }
     }
     
-    // Update DB
-    const { error } = await supabase.from('schools').update({ ...updates, logo_url }).eq('id', school.id);
+    // FIX: Exclude the file object from the database update payload
+    const { logo_file, ...otherUpdates } = Object.fromEntries(formData.entries());
+    
+    const { error } = await supabase.from('schools').update({ ...otherUpdates, logo_url }).eq('id', school.id);
     
     if(!error) {
-        // Update Local State IMMEDIATELY to show change
-        setSchool(prev => ({ ...prev, ...updates, logo_url }));
+        setSchool(prev => ({ ...prev, ...otherUpdates, logo_url }));
         alert('School Info Updated!');
     } else {
-        alert('Update Failed');
+        alert('Update Failed: ' + error.message);
     }
     setLoading(false);
   };
@@ -418,20 +417,11 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                             <input name="current_term" defaultValue={school?.current_term} className="border p-2 rounded" />
                             <input name="current_session" defaultValue={school?.current_session} className="border p-2 rounded" />
                         </div>
-                        <div className="border p-4 rounded bg-gray-50">
-                            <label className="block text-sm font-bold mb-2 flex items-center gap-2"><UploadCloud size={16}/> Upload Logo</label>
-                            <input type="file" name="logo_file" className="text-sm w-full" accept="image/*" />
-                            {/* Live Preview with Timestamp to force refresh */}
-                            {school?.logo_url && (
-                                <div className="mt-4">
-                                    <p className="text-xs text-gray-500 mb-1">Current Logo Preview:</p>
-                                    <img 
-                                        src={`${school.logo_url}?t=${new Date().getTime()}`} 
-                                        alt="Logo" 
-                                        className="h-20 object-contain border p-1 bg-white" 
-                                    />
-                                </div>
-                            )}
+                        <div>
+                            <label className="block text-sm font-bold mb-1">School Logo</label>
+                            <input type="file" name="logo_file" className="text-sm border p-2 w-full rounded" />
+                            {/* PREVIEW LOGO TO DEBUG */}
+                            {school?.logo_url && <img src={school.logo_url} alt="Logo" className="h-20 mt-2 border p-1" />}
                         </div>
                         <button disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded w-full">
                             {loading ? 'Saving...' : 'Save Changes'}
