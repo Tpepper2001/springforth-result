@@ -32,6 +32,23 @@ const calculateGrade = (total) => {
 
 const generatePIN = () => Math.floor(100000 + Math.random() * 900000).toString();
 
+// Helper to convert image URL to Base64 for PDF rendering
+const imageUrlToBase64 = async (url) => {
+    if (!url) return null;
+    try {
+        const response = await fetch(url + '?t=' + new Date().getTime());
+        const blob = await response.blob();
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+        });
+    } catch (e) {
+        console.error("Image convert error:", e);
+        return null;
+    }
+};
+
 // ==================== HOOKS ====================
 const useAutoSave = (callback, delay = 2000) => {
   const [saving, setSaving] = useState(false);
@@ -51,19 +68,14 @@ const useAutoSave = (callback, delay = 2000) => {
   return { save: trigger, saving, lastSaved };
 };
 
-// ==================== PDF COMPONENT (With Watermark) ====================
+// ==================== PDF COMPONENT ====================
 const pdfStyles = StyleSheet.create({
   page: { padding: 20, fontFamily: 'Helvetica', fontSize: 8 },
-  // Center watermark
-  watermark: { 
-    position: 'absolute', 
-    top: '30%', 
-    left: '25%', 
-    width: '50%', 
-    height: 'auto', 
-    opacity: 0.15, // Increased visibility
-    zIndex: -1 
+  watermarkContainer: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center', zIndex: -1
   },
+  watermarkImage: { width: 300, height: 300, opacity: 0.1 },
   headerBox: { flexDirection: 'row', border: '2px solid #000', padding: 10, marginBottom: 5, alignItems: 'center' },
   logo: { width: 60, height: 60, marginRight: 10, objectFit: 'contain' },
   headerText: { flex: 1, alignItems: 'center' },
@@ -88,7 +100,7 @@ const pdfStyles = StyleSheet.create({
   signatureBox: { width: '40%', alignItems: 'center', borderTop: '1px solid #000', paddingTop: 5 },
 });
 
-const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = [], reportType = 'full' }) => {
+const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = [], reportType = 'full', logoBase64 }) => {
   const isMidTerm = reportType === 'mid';
   const config = school.assessment_config || [];
   
@@ -101,11 +113,9 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
   const processedResults = results.map(r => {
     const rawScores = r.scores || {};
     let total = 0;
-    
     displayFields.forEach(f => {
       total += (parseFloat(rawScores[f.code]) || 0);
     });
-
     const { grade, remark } = calculateGrade(total);
     return { ...r, scores: rawScores, total, grade, remark };
   });
@@ -114,17 +124,18 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
   const average = (totalScore / (results.length || 1)).toFixed(1);
   const behaviorMap = Object.fromEntries(behaviors.map(b => [b.trait, b.rating]));
 
-  // Cache bust the logo url to prevent CORS issues on fresh uploads
-  const logoUrl = school?.logo_url ? `${school.logo_url}?t=${new Date().getTime()}` : null;
-
   return (
     <Document>
       <Page size="A4" style={pdfStyles.page}>
-        {/* WATERMARK LAYER */}
-        {logoUrl && <PDFImage src={logoUrl} style={pdfStyles.watermark} />}
+        {/* WATERMARK */}
+        {logoBase64 && (
+            <View style={pdfStyles.watermarkContainer}>
+                <PDFImage src={logoBase64} style={pdfStyles.watermarkImage} />
+            </View>
+        )}
 
         <View style={pdfStyles.headerBox}>
-          {logoUrl ? <PDFImage src={logoUrl} style={pdfStyles.logo} /> : <View style={{width: 60}} />}
+          {logoBase64 ? <PDFImage src={logoBase64} style={pdfStyles.logo} /> : <View style={{width: 60}} />}
           <View style={pdfStyles.headerText}>
             <Text style={pdfStyles.schoolName}>{school?.name || 'SCHOOL NAME'}</Text>
             <Text style={pdfStyles.schoolDetails}>{school?.address}</Text>
@@ -174,7 +185,7 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
 
               <Text style={[pdfStyles.cell, pdfStyles.colTotal, pdfStyles.cellCenter]}>{r.total}</Text>
               {!isMidTerm && <Text style={[pdfStyles.cell, pdfStyles.colGrade, pdfStyles.cellCenter]}>{r.grade}</Text>}
-              <Text style={[pdfStyles.cell, pdfStyles.colRemark]}>{isMidTerm ? (r.total >= (totalScore/results.length)/2 ? 'Pass' : 'Fail') : r.remark}</Text>
+              <Text style={[pdfStyles.cell, pdfStyles.colRemark]}>{isMidTerm ? (r.total >= (totalScore/(results.length||1))/2 ? 'Pass' : 'Fail') : r.remark}</Text>
             </View>
           ))}
         </View>
@@ -252,26 +263,17 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const updates = Object.fromEntries(formData.entries());
-    
-    // IMAGE UPLOAD LOGIC
     const file = formData.get('logo_file');
     let logo_url = school.logo_url;
-    
     if (file && file.size > 0) {
-        // Sanitize filename to remove spaces and special chars
         const fileExt = file.name.split('.').pop();
-        const safeName = `${school.id}-${Date.now()}.${fileExt}`;
-        
-        const { error } = await supabase.storage.from('school-assets').upload(safeName, file);
+        const fileName = `${school.id}-${Math.random()}.${fileExt}`;
+        const { error } = await supabase.storage.from('school-assets').upload(fileName, file);
         if (!error) {
-            const { data } = supabase.storage.from('school-assets').getPublicUrl(safeName);
+            const { data } = supabase.storage.from('school-assets').getPublicUrl(fileName);
             logo_url = data.publicUrl;
-        } else {
-            console.error(error);
-            alert("Upload failed. Make sure bucket is set to Public.");
         }
     }
-    
     await supabase.from('schools').update({ ...updates, logo_url }).eq('id', school.id);
     window.alert('Updated!');
     fetchSchoolData();
@@ -332,7 +334,10 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       const { data: comments } = await supabase.from('comments').select('*').eq('student_id', student.id).maybeSingle();
       const behaviorList = comments?.behaviors ? JSON.parse(comments.behaviors) : {};
       const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviorList[trait] || 'Good' }));
-      setPreviewData({ school, student, classInfo: student.classes, results: results || [], comments: comments || {}, behaviors: behaviorArray });
+      
+      const logoBase64 = await imageUrlToBase64(school.logo_url);
+
+      setPreviewData({ school, student, classInfo: student.classes, results: results || [], comments: comments || {}, behaviors: behaviorArray, logoBase64 });
   };
 
   const approveResult = async (studentId) => {
@@ -353,11 +358,11 @@ const SchoolAdmin = ({ profile, onLogout }) => {
               <div className="bg-white p-4 shadow flex justify-between items-center">
                   <button onClick={() => setViewingStudent(null)} className="flex items-center gap-2"><X /> Close</button>
                   <h2 className="font-bold">{viewingStudent.name} - {reportType}</h2>
-                  <PDFDownloadLink document={<ResultPDF {...previewData} reportType={reportType} />} fileName={`${viewingStudent.name}.pdf`}>
+                  <PDFDownloadLink document={<ResultPDF {...previewData} reportType={reportType} logoBase64={previewData.logoBase64} />} fileName={`${viewingStudent.name}.pdf`}>
                     <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Download /> Download</button>
                   </PDFDownloadLink>
               </div>
-              <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} reportType={reportType} /></PDFViewer>
+              <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} reportType={reportType} logoBase64={previewData.logoBase64} /></PDFViewer>
           </div>
       )
   }
@@ -404,7 +409,8 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                         <div>
                             <label className="block text-sm font-bold mb-1">School Logo</label>
                             <input type="file" name="logo_file" className="text-sm border p-2 w-full rounded" />
-                            {school?.logo_url && <img src={school.logo_url} alt="Logo" className="h-16 mt-2 border p-1" />}
+                            {/* PREVIEW LOGO TO DEBUG */}
+                            {school?.logo_url && <img src={school.logo_url} alt="Logo" className="h-20 mt-2 border p-1" />}
                         </div>
                         <button className="bg-blue-600 text-white px-4 py-2 rounded">Save Changes</button>
                     </form>
@@ -609,7 +615,11 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     await saveResultToDB();
     const { data: results } = await supabase.from('results').select('*, subjects(*)').eq('student_id', selectedStudent.id);
     const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviors[trait] || 'Good' }));
-    setPreviewData({ school: schoolData, student: selectedStudent, classInfo: { ...curClass }, results: results || [], comments: { tutor_comment: comment }, behaviors: behaviorArray });
+    
+    // Generate Base64 Logo for PDF
+    const logoBase64 = await imageUrlToBase64(schoolData.logo_url);
+
+    setPreviewData({ school: schoolData, student: selectedStudent, classInfo: { ...curClass }, results: results || [], comments: { tutor_comment: comment }, behaviors: behaviorArray, logoBase64 });
     setShowPreview(true);
   };
 
@@ -627,12 +637,12 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   <button onClick={() => setShowPreview(false)} className="flex items-center gap-2"><X /> Close</button>
                   <div className="flex gap-2">
                      <button onClick={publishResult} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2"><ShieldCheck size={18}/> Submit for Approval</button>
-                     <PDFDownloadLink document={<ResultPDF {...previewData} />} fileName="Result.pdf">
+                     <PDFDownloadLink document={<ResultPDF {...previewData} logoBase64={previewData.logoBase64} />} fileName="Result.pdf">
                         <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Download /> PDF</button>
                      </PDFDownloadLink>
                   </div>
               </div>
-              <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} /></PDFViewer>
+              <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} logoBase64={previewData.logoBase64} /></PDFViewer>
           </div>
       );
   }
@@ -798,8 +808,11 @@ const ParentPortal = ({ onBack }) => {
 
         const behaviors = comm?.behaviors ? JSON.parse(comm.behaviors) : {};
         const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviors[trait] || 'Good' }));
+        
+        // Base64 logo conversion for parents too
+        const logoBase64 = await imageUrlToBase64(stu.schools.logo_url);
 
-        setData({ student: stu, school: stu.schools, classInfo: stu.classes, results: stu.results, comments: comm || {}, behaviors: behaviorArray });
+        setData({ student: stu, school: stu.schools, classInfo: stu.classes, results: stu.results, comments: comm || {}, behaviors: behaviorArray, logoBase64 });
     };
 
     if (data) return (
@@ -807,11 +820,11 @@ const ParentPortal = ({ onBack }) => {
             <div className="bg-white p-4 shadow flex justify-between items-center">
                 <button onClick={()=>setData(null)} className="flex items-center gap-2"><X /> Back</button>
                 <div className="flex gap-2">
-                    <PDFDownloadLink document={<ResultPDF {...data} reportType="mid" />} fileName="MidTerm.pdf"><button className="bg-blue-100 text-blue-600 px-4 py-2 rounded">Mid-Term</button></PDFDownloadLink>
-                    <PDFDownloadLink document={<ResultPDF {...data} reportType="full" />} fileName="FullTerm.pdf"><button className="bg-green-600 text-white px-4 py-2 rounded">Full-Term</button></PDFDownloadLink>
+                    <PDFDownloadLink document={<ResultPDF {...data} reportType="mid" logoBase64={data.logoBase64} />} fileName="MidTerm.pdf"><button className="bg-blue-100 text-blue-600 px-4 py-2 rounded">Mid-Term</button></PDFDownloadLink>
+                    <PDFDownloadLink document={<ResultPDF {...data} reportType="full" logoBase64={data.logoBase64} />} fileName="FullTerm.pdf"><button className="bg-green-600 text-white px-4 py-2 rounded">Full-Term</button></PDFDownloadLink>
                 </div>
             </div>
-            <PDFViewer className="flex-1"><ResultPDF {...data} reportType="full" /></PDFViewer>
+            <PDFViewer className="flex-1"><ResultPDF {...data} reportType="full" logoBase64={data.logoBase64} /></PDFViewer>
         </div>
     );
 
