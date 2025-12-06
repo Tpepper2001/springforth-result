@@ -8,7 +8,7 @@ import {
   Copy, Check, AlertCircle, User, FileText, Download, Menu, X, Users, TrendingUp
 } from 'lucide-react';
 
-// --- CONFIGURATION ---
+// --- CONFIGURATION --
 const supabaseUrl = 'https://lckdmbegwmvtxjuddxcc.supabase.co'; 
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxja2RtYmVnd212dHhqdWRkeGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ5NTI3MjcsImV4cCI6MjA4MDUyODcyN30.MzrMr8q3UuozyrEjoRGyfDlkgIvWv9IKKdjDx6aJMsw';
 const supabase = createClient(supabaseUrl, supabaseKey);
