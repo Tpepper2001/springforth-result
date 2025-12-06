@@ -5,14 +5,13 @@ import {
 } from '@react-pdf/renderer';
 import { 
   LayoutDashboard, Key, LogOut, Loader2, Save, Plus, School, 
-  Copy, Check, AlertCircle, User, FileText, Download, Menu, X, Users, TrendingUp, Eye
+  Copy, Check, AlertCircle, User, FileText, Download, Menu, X, Users, TrendingUp, Eye, Send, CheckCircle
 } from 'lucide-react';
 
 // --- CONFIGURATION --
 const supabaseUrl = 'https://ghlnenmfwlpwlqdrbean.supabase.co'; 
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdobG5lbm1md2xwd2xxZHJiZWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0MTE0MDQsImV4cCI6MjA3OTk4NzQwNH0.rNILUdI035c4wl4kFkZFP4OcIM_t7bNMqktKm25d5Gg';
 const supabase = createClient(supabaseUrl, supabaseKey);
-
 
 // --- HELPERS ---
 const SCORE_LIMITS = { note: 5, cw: 5, hw: 5, test: 15, ca: 15, exam: 60 };
@@ -30,25 +29,6 @@ const calculateGrade = (total) => {
   if (total >= 50) return { grade: 'D', remark: 'Fairly Good' };
   if (total >= 40) return { grade: 'E', remark: 'Below Expectation' };
   return { grade: 'E*', remark: 'Rarely' };
-};
-
-// --- HOOKS ---
-const useAutoSave = (callback, delay = 2000) => {
-  const [saving, setSaving] = useState(false);
-  const [lastSaved, setLastSaved] = useState(null);
-  const timeoutRef = React.useRef(null);
-
-  const debouncedSave = useCallback((data) => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(async () => {
-      setSaving(true);
-      await callback(data);
-      setLastSaved(new Date());
-      setSaving(false);
-    }, delay);
-  }, [callback, delay]);
-
-  return { debouncedSave, saving, lastSaved };
 };
 
 // --- PDF STYLES ---
@@ -106,7 +86,7 @@ const styles = StyleSheet.create({
 });
 
 // --- PDF DOCUMENT ---
-const ResultPDF = ({ school, student, results, classInfo, comments }) => {
+const ResultPDF = ({ school, student, results, classInfo, comments, behaviors }) => {
   const totalScore = results.reduce((acc, r) => acc + r.total, 0);
   const average = (totalScore / (results.length || 1)).toFixed(1);
   const { grade: overallGrade } = calculateGrade(parseFloat(average));
@@ -116,14 +96,14 @@ const ResultPDF = ({ school, student, results, classInfo, comments }) => {
     if (gradeCounts[r.grade] !== undefined) gradeCounts[r.grade]++;
   });
   
-  const behaviors = [
-    { trait: 'COOPERATION', rating: 'Excellent Degree' },
-    { trait: 'LEADERSHIP', rating: 'Excellent Degree' },
-    { trait: 'HONESTY', rating: 'Excellent Degree' },
-    { trait: 'SELF DISCIPLINE', rating: 'Excellent Degree' },
-    { trait: 'RESPECT', rating: 'Excellent Degree' },
-    { trait: 'RESPONSIBILITY', rating: 'Excellent Degree' },
-    { trait: 'EMPATHY', rating: 'Excellent Degree' },
+  const defaultBehaviors = [
+    { trait: 'COOPERATION', rating: behaviors?.cooperation || 'Excellent Degree' },
+    { trait: 'LEADERSHIP', rating: behaviors?.leadership || 'Excellent Degree' },
+    { trait: 'HONESTY', rating: behaviors?.honesty || 'Excellent Degree' },
+    { trait: 'SELF DISCIPLINE', rating: behaviors?.self_discipline || 'Excellent Degree' },
+    { trait: 'RESPECT', rating: behaviors?.respect || 'Excellent Degree' },
+    { trait: 'RESPONSIBILITY', rating: behaviors?.responsibility || 'Excellent Degree' },
+    { trait: 'EMPATHY', rating: behaviors?.empathy || 'Excellent Degree' },
   ];
   
   return (
@@ -229,7 +209,7 @@ const ResultPDF = ({ school, student, results, classInfo, comments }) => {
         <View style={styles.behaviorSection}>
           <Text style={styles.summaryTitle}>STUDENTS BEHAVIOURAL REPORT</Text>
           <View style={styles.behaviorGrid}>
-            {behaviors.map((b, i) => (
+            {defaultBehaviors.map((b, i) => (
               <Text key={i} style={styles.behaviorItem}>{b.trait}: {b.rating}</Text>
             ))}
           </View>
@@ -242,7 +222,7 @@ const ResultPDF = ({ school, student, results, classInfo, comments }) => {
 
         <View style={styles.commentSection}>
           <Text style={styles.commentLabel}>PRINCIPAL'S COMMENT:</Text>
-          <Text style={styles.commentText}>{comments?.principal_comment || 'No comment provided.'}</Text>
+          <Text style={styles.commentText}>{comments?.principal_comment || 'Awaiting principal approval.'}</Text>
         </View>
 
         <View style={styles.footer}>
@@ -364,6 +344,10 @@ const SchoolAdmin = ({ profile, onLogout }) => {
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [totalStudents, setTotalStudents] = useState(0);
+  const [pendingResults, setPendingResults] = useState([]);
+  const [selectedResult, setSelectedResult] = useState(null);
+  const [principalComment, setPrincipalComment] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -373,6 +357,15 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       setSchool(s);
       const { count } = await supabase.from('students').select('*', { count: 'exact', head: true }).eq('school_id', s.id);
       setTotalStudents(count || 0);
+      
+      // Fetch pending results
+      const { data: pending } = await supabase
+        .from('comments')
+        .select('*, students(*, classes(name))')
+        .eq('students.school_id', s.id)
+        .eq('approved_by_principal', false)
+        .not('tutor_comment', 'is', null);
+      setPendingResults(pending || []);
     }
     const { data: c } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', s?.id);
     setClasses(c || []);
@@ -408,7 +401,74 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     alert('Saved');
   };
 
+  const openResultPreview = async (comment) => {
+    setSelectedResult(comment);
+    setPrincipalComment(comment.principal_comment || '');
+    
+    const { data: res } = await supabase.from('results').select('*, subjects(*)').eq('student_id', comment.student_id);
+    const { data: beh } = await supabase.from('behaviors').select('*').eq('student_id', comment.student_id).single();
+    const { data: stu } = await supabase.from('students').select('*, classes(*, profiles(full_name))').eq('id', comment.student_id).single();
+    
+    const processed = (res||[]).map(x => ({ 
+      ...x, 
+      total: (x.score_note||0)+(x.score_cw||0)+(x.score_hw||0)+(x.score_test||0)+(x.score_ca||0)+(x.score_exam||0) 
+    }));
+    
+    setShowPreview({
+      student: stu,
+      school: school,
+      classInfo: stu.classes,
+      results: processed,
+      comments: comment,
+      behaviors: beh
+    });
+  };
+
+  const approveResult = async () => {
+    await supabase.from('comments')
+      .update({ 
+        principal_comment: principalComment,
+        approved_by_principal: true
+      })
+      .eq('id', selectedResult.id);
+    
+    alert('Result Approved!');
+    setShowPreview(false);
+    setSelectedResult(null);
+    fetchAll();
+  };
+
   const isExpired = new Date(school.subscription_expires_at) < new Date();
+
+  if (showPreview) {
+    return (
+      <div className="h-screen flex flex-col bg-gray-100">
+        <div className="bg-white p-4 shadow flex justify-between items-center">
+          <button onClick={() => setShowPreview(false)} className="flex items-center gap-2 text-gray-700 hover:text-gray-900">
+            <X size={20}/> Close Preview
+          </button>
+          <span className="font-bold">{showPreview.student.name}</span>
+          <div className="flex gap-2">
+            <input 
+              type="text"
+              placeholder="Principal's Comment"
+              className="border rounded px-3 py-2 w-96"
+              value={principalComment}
+              onChange={(e) => setPrincipalComment(e.target.value)}
+            />
+            <button 
+              onClick={approveResult}
+              className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2">
+              <CheckCircle size={16}/> Approve
+            </button>
+          </div>
+        </div>
+        <PDFViewer className="flex-1 w-full">
+          <ResultPDF {...showPreview} comments={{...showPreview.comments, principal_comment: principalComment}} />
+        </PDFViewer>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -424,10 +484,15 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         {isExpired && <div className="bg-red-600 text-white p-4 rounded-xl mb-6 text-center font-bold">SUBSCRIPTION EXPIRED</div>}
 
         <div className="flex gap-3 mb-6">
-          {['home', 'classes', 'students', 'settings'].map(v => (
+          {['home', 'pending', 'classes', 'students', 'settings'].map(v => (
             <button key={v} onClick={() => setView(v)} 
-              className={`px-4 py-2 rounded-lg capitalize ${view === v ? 'bg-blue-600 text-white' : 'bg-white shadow'}`}>
+              className={`px-4 py-2 rounded-lg capitalize ${view === v ? 'bg-blue-600 text-white' : 'bg-white shadow'} relative`}>
               {v}
+              {v === 'pending' && pendingResults.length > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center">
+                  {pendingResults.length}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -435,98 +500,127 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         {view === 'home' && (
           <div className="grid md:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded shadow">
-              <h3 className="text-gray-500 text-xs font-bold uppercase">Students</h3>
-              <p className="text-3xl font-bold">{totalStudents} / {school.max_students}</p>
-              <div className="w-full bg-gray-100 h-2 rounded mt-2"><div className="bg-blue-600 h-full" style={{width: `${(totalStudents/school.max_students)*100}%`}}></div></div>
+              <h3 className="text-gray-500 text-xs font-bold uppercase">Students</h3>          <div className="text-3xl font-bold">{totalStudents} / {school.max_students}</div>
             </div>
             <div className="bg-white p-6 rounded shadow">
               <h3 className="text-gray-500 text-xs font-bold uppercase">Subscription</h3>
-              <p className={`text-xl font-bold ${isExpired ? 'text-red-500' : 'text-green-600'}`}>{isExpired ? 'Expired' : 'Active'}</p>
-              <p className="text-xs mt-1">Ends: {new Date(school.subscription_expires_at).toDateString()}</p>
+              <div className={`text-xl font-bold ${isExpired ? 'text-red-500' : 'text-green-500'}`}>
+                {isExpired ? 'Expired' : 'Active'}
+              </div>
+              <p className="text-xs text-gray-400">Expires: {new Date(school.subscription_expires_at).toLocaleDateString()}</p>
+            </div>
+            <div className="bg-white p-6 rounded shadow">
+              <h3 className="text-gray-500 text-xs font-bold uppercase">Pending Results</h3>
+              <div className="text-3xl font-bold text-orange-500">{pendingResults.length}</div>
             </div>
           </div>
         )}
 
-        {view === 'classes' && !isExpired && (
-          <div className="grid md:grid-cols-2 gap-6">
-            <form onSubmit={addClass} className="bg-white p-6 rounded shadow space-y-4">
-              <h3 className="font-bold">Add Class</h3>
-              <input name="name" placeholder="Class Name" className="w-full p-2 border rounded" required />
-              <select name="tutor" className="w-full p-2 border rounded">
-                <option value="">Select Tutor</option>
-                {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-              </select>
-              <button className="w-full bg-blue-600 text-white p-2 rounded">Create Class</button>
-            </form>
-            <div className="bg-white p-6 rounded shadow space-y-2">
-              <h3 className="font-bold">Existing Classes</h3>
+        {view === 'pending' && (
+          <div className="bg-white p-6 rounded shadow">
+            <h2 className="font-bold mb-4">Results Awaiting Approval</h2>
+            {pendingResults.length === 0 ? <p className="text-gray-500">No pending results.</p> : (
+              <div className="space-y-3">
+                {pendingResults.map(c => (
+                  <div key={c.id} className="flex justify-between items-center p-3 border rounded hover:bg-gray-50">
+                    <div>
+                      <p className="font-bold">{c.students.name}</p>
+                      <p className="text-xs text-gray-500">{c.students.classes?.name}</p>
+                    </div>
+                    <button onClick={() => openResultPreview(c)} className="bg-blue-100 text-blue-600 px-3 py-1 rounded text-sm font-medium">
+                      Review & Approve
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {view === 'classes' && (
+          <div className="grid md:grid-cols-2 gap-8">
+            <div className="bg-white p-6 rounded shadow h-fit">
+              <h3 className="font-bold mb-4">Add Class</h3>
+              <form onSubmit={addClass} className="space-y-4">
+                <input name="name" placeholder="Class Name (e.g. JSS 1)" className="w-full border p-2 rounded" required />
+                <select name="tutor" className="w-full border p-2 rounded">
+                  <option value="">Select Form Tutor</option>
+                  {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                </select>
+                <button className="w-full bg-blue-600 text-white py-2 rounded">Create Class</button>
+              </form>
+            </div>
+            <div className="bg-white p-6 rounded shadow">
+              <h3 className="font-bold mb-4">Existing Classes</h3>
               {classes.map(c => (
-                <div key={c.id} className="border p-2 rounded flex justify-between">
+                <div key={c.id} className="border-b py-2 flex justify-between">
                   <span>{c.name}</span>
-                  <span className="text-sm text-gray-500">{c.profiles?.full_name}</span>
+                  <span className="text-sm text-gray-500">{c.profiles?.full_name || 'No Tutor'}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {view === 'students' && !isExpired && (
-          <div className="bg-white p-6 rounded shadow max-w-xl mx-auto">
-            <h3 className="font-bold mb-4">Enroll Student</h3>
-            <form onSubmit={addStudent} className="space-y-4">
-              <input name="name" placeholder="Full Name" className="w-full p-2 border rounded" required />
-              <div className="grid grid-cols-2 gap-4">
-                <input name="adm" placeholder="Admission No" className="w-full p-2 border rounded" required />
-                <input name="pin" type="password" placeholder="Parent PIN" className="w-full p-2 border rounded" required />
+        {view === 'students' && (
+          <div className="grid md:grid-cols-2 gap-8">
+            <div className="bg-white p-6 rounded shadow h-fit">
+              <h3 className="font-bold mb-4">Add Student</h3>
+              <form onSubmit={addStudent} className="space-y-4">
+                <input name="name" placeholder="Full Name" className="w-full border p-2 rounded" required />
+                <input name="adm" placeholder="Admission No" className="w-full border p-2 rounded" required />
+                <div className="grid grid-cols-2 gap-2">
+                  <select name="class_id" className="border p-2 rounded" required>
+                    <option value="">Class</option>
+                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <select name="gender" className="border p-2 rounded" required>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </div>
+                <input name="pin" placeholder="Parent Access PIN" className="w-full border p-2 rounded" required />
+                <button className="w-full bg-green-600 text-white py-2 rounded">Register Student</button>
+              </form>
+            </div>
+            <div className="bg-white p-6 rounded shadow">
+              <h3 className="font-bold mb-4">Student List ({totalStudents})</h3>
+              <div className="max-h-96 overflow-y-auto">
+                 {/* In a real app, this should be paginated */}
+                 <p className="text-sm text-gray-500">Search logic would go here...</p>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <select name="gender" className="w-full p-2 border rounded">
-                  <option>Male</option>
-                  <option>Female</option>
-                </select>
-                <select name="class_id" className="w-full p-2 border rounded" required>
-                  <option value="">Select Class</option>
-                  {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <button className="w-full bg-green-600 text-white p-2 rounded">Enroll</button>
-            </form>
+            </div>
           </div>
         )}
 
         {view === 'settings' && (
-          <div className="bg-white p-6 rounded shadow max-w-xl space-y-4">
-             <input className="w-full p-2 border rounded" placeholder="School Name" value={school.name || ''} onChange={e=>setSchool({...school, name: e.target.value})} />
-             <input className="w-full p-2 border rounded" placeholder="Address" value={school.address || ''} onChange={e=>setSchool({...school, address: e.target.value})} />
-             <input className="w-full p-2 border rounded" placeholder="Contact" value={school.contact || ''} onChange={e=>setSchool({...school, contact: e.target.value})} />
-             <input className="w-full p-2 border rounded" placeholder="Principal Name" value={school.principal_name || ''} onChange={e=>setSchool({...school, principal_name: e.target.value})} />
-             <div className="grid grid-cols-2 gap-2">
-               <input className="w-full p-2 border rounded" placeholder="Term" value={school.current_term || ''} onChange={e=>setSchool({...school, current_term: e.target.value})} />
-               <input className="w-full p-2 border rounded" placeholder="Session" value={school.current_session || ''} onChange={e=>setSchool({...school, current_session: e.target.value})} />
-             </div>
-             
-             <div className="border-t pt-4">
-               <label className="block text-sm font-bold mb-2">School Logo</label>
-               <input type="file" accept="image/*" className="w-full p-2 border rounded" 
-                 onChange={async (e) => {
-                   const file = e.target.files?.[0];
-                   if (!file) return;
-                   
-                   const reader = new FileReader();
-                   reader.onload = async (event) => {
-                     const base64 = event.target.result;
-                     setSchool({...school, logo_url: base64});
-                   };
-                   reader.readAsDataURL(file);
-                 }} />
-               {school.logo_url && (
-                 <div className="mt-2">
-                   <img src={school.logo_url} alt="Logo" className="h-20 object-contain border rounded p-2" />
-                 </div>
-               )}
-             </div>
-             
-             <button onClick={saveSchool} className="w-full bg-blue-600 text-white p-2 rounded">Save Info</button>
+          <div className="bg-white p-6 rounded shadow max-w-2xl">
+            <h3 className="font-bold mb-4">School Settings</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-gray-500">School Name</label>
+                <input value={school.name || ''} onChange={e => setSchool({...school, name: e.target.value})} className="w-full border p-2 rounded" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500">Logo URL</label>
+                <input value={school.logo_url || ''} onChange={e => setSchool({...school, logo_url: e.target.value})} className="w-full border p-2 rounded" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-500">Current Term</label>
+                  <input value={school.current_term || ''} onChange={e => setSchool({...school, current_term: e.target.value})} className="w-full border p-2 rounded" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500">Session</label>
+                  <input value={school.current_session || ''} onChange={e => setSchool({...school, current_session: e.target.value})} className="w-full border p-2 rounded" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500">Principal's Name</label>
+                <input value={school.principal_name || ''} onChange={e => setSchool({...school, principal_name: e.target.value})} className="w-full border p-2 rounded" />
+              </div>
+              <button onClick={saveSchool} className="bg-blue-600 text-white px-6 py-2 rounded">Save Changes</button>
+            </div>
           </div>
         )}
       </div>
@@ -534,258 +628,354 @@ const SchoolAdmin = ({ profile, onLogout }) => {
   );
 };
 
-// --- TEACHER DASHBOARD ---
-const TeacherDashboard = ({ profile, onLogout }) => {
+// --- TEACHER PORTAL ---
+const TeacherPortal = ({ profile, onLogout }) => {
   const [classes, setClasses] = useState([]);
-  const [curClass, setCurClass] = useState(null);
-  const [students, setStudents] = useState([]);
-  const [selStu, setSelStu] = useState(null);
   const [subjects, setSubjects] = useState([]);
+  const [selectedClass, setSelectedClass] = useState(null);
+  const [students, setStudents] = useState([]);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [loading, setLoading] = useState(false);
+  
+  // Data for editing
   const [scores, setScores] = useState({});
+  const [behavior, setBehavior] = useState({});
   const [comment, setComment] = useState('');
-  const [showPreview, setShowPreview] = useState(false);
-  const [school, setSchool] = useState(null);
 
   useEffect(() => {
-    const init = async () => {
-      const { data } = await supabase.from('classes').select('*').eq('form_tutor_id', profile.id);
-      setClasses(data || []);
-      if(data?.[0]) handleClassSelect(data[0]);
-      
-      const { data: sch } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
-      setSchool(sch);
-    };
-    init();
-  }, [profile]);
+    fetchTeacherData();
+  }, []);
 
-  const handleClassSelect = async (cls) => {
-    setCurClass(cls);
-    const { data: stus } = await supabase.from('students').select('*').eq('class_id', cls.id);
-    setStudents(stus || []);
-    const { data: subs } = await supabase.from('subjects').select('*').eq('class_id', cls.id);
-    setSubjects(subs || []);
-    setSelStu(null);
+  const fetchTeacherData = async () => {
+    // Fetch classes where this teacher is assigned (or all if school policy allows)
+    // Here we fetch all classes in the teacher's school for simplicity, normally filtered by permission
+    const { data: c } = await supabase.from('classes').select('*').eq('school_id', profile.school_id);
+    setClasses(c || []);
+    const { data: s } = await supabase.from('subjects').select('*').eq('school_id', profile.school_id);
+    setSubjects(s || []);
   };
 
-  const addSubject = async () => {
-    const name = prompt('Subject Name:');
-    if(name && curClass) {
-      await supabase.from('subjects').insert({ name, class_id: curClass.id, school_id: profile.school_id });
-      handleClassSelect(curClass);
-    }
+  const loadStudents = async (classId) => {
+    setSelectedClass(classId);
+    setLoading(true);
+    const { data } = await supabase.from('students').select('*').eq('class_id', classId).order('name');
+    setStudents(data || []);
+    setLoading(false);
   };
 
-  const loadStudentData = async (stu) => {
-    setSelStu(stu);
-    const { data: res } = await supabase.from('results').select('*').eq('student_id', stu.id);
-    const { data: com } = await supabase.from('comments').select('*').eq('student_id', stu.id).single();
+  const selectStudent = async (student) => {
+    setSelectedStudent(student);
+    setLoading(true);
     
+    // Fetch Results
+    const { data: res } = await supabase.from('results').select('*').eq('student_id', student.id);
+    // Transform to object for easier input mapping: { subject_id: { ...scoreData } }
     const scoreMap = {};
-    subjects.forEach(s => {
-      const existing = res?.find(r => r.subject_id === s.id);
-      scoreMap[s.id] = existing || { note: 0, cw: 0, hw: 0, test: 0, ca: 0, exam: 0, position: '', highest: '' };
-    });
+    res?.forEach(r => scoreMap[r.subject_id] = r);
     setScores(scoreMap);
+
+    // Fetch Behavior
+    const { data: beh } = await supabase.from('behaviors').select('*').eq('student_id', student.id).single();
+    setBehavior(beh || {});
+
+    // Fetch Comment
+    const { data: com } = await supabase.from('comments').select('*').eq('student_id', student.id).single();
     setComment(com?.tutor_comment || '');
+    
+    setLoading(false);
   };
 
-  const saveData = async () => {
-    if(!selStu) return;
+  const handleScoreUpdate = async (subjectId, field, value) => {
+    const validValue = validateScore(value, field);
+    const newScores = { ...scores };
+    if (!newScores[subjectId]) newScores[subjectId] = { student_id: selectedStudent.id, subject_id: subjectId };
+    newScores[subjectId][field] = validValue;
     
-    const resToSave = subjects.map(s => {
-      const sc = scores[s.id];
-      const total = (sc.score_note||0)+(sc.score_cw||0)+(sc.score_hw||0)+(sc.score_test||0)+(sc.score_ca||0)+(sc.score_exam||0);
-      const { grade, remark } = calculateGrade(total);
-      return {
-        student_id: selStu.id, subject_id: s.id,
-        score_note: sc.score_note, score_cw: sc.score_cw, score_hw: sc.score_hw,
-        score_test: sc.score_test, score_ca: sc.score_ca, score_exam: sc.score_exam,
-        total, grade, remarks: remark,
-        position: sc.position || null,
-        highest: sc.highest || null
-      };
+    // Auto calc total/grade locally for UI
+    const s = newScores[subjectId];
+    const total = (parseFloat(s.score_note)||0) + (parseFloat(s.score_cw)||0) + (parseFloat(s.score_hw)||0) + (parseFloat(s.score_test)||0) + (parseFloat(s.score_ca)||0) + (parseFloat(s.score_exam)||0);
+    const { grade, remark } = calculateGrade(total);
+    s.total = total;
+    s.grade = grade;
+    s.remarks = remark;
+
+    setScores(newScores);
+
+    // Debounced save or instant save
+    await supabase.from('results').upsert({
+      student_id: selectedStudent.id,
+      subject_id: subjectId,
+      [field]: validValue,
+      total, grade, remarks: remark
     });
-    
-    await supabase.from('results').delete().eq('student_id', selStu.id);
-    await supabase.from('results').insert(resToSave);
-    await supabase.from('comments').upsert({ student_id: selStu.id, tutor_comment: comment }, { onConflict: 'student_id' });
   };
 
-  const { debouncedSave, saving } = useAutoSave(saveData);
-
-  useEffect(() => { if(selStu) debouncedSave(); }, [scores, comment]);
-
-  const updateScore = (subId, field, val) => {
-    const v = validateScore(val, field);
-    setScores(prev => ({ ...prev, [subId]: { ...prev[subId], [`score_${field}`]: v } }));
+  const saveDetails = async () => {
+    await supabase.from('behaviors').upsert({ ...behavior, student_id: selectedStudent.id });
+    await supabase.from('comments').upsert({ 
+      student_id: selectedStudent.id, 
+      tutor_comment: comment,
+      approved_by_principal: false // Reset approval on change
+    });
+    alert('Student Record Saved');
   };
-
-  const getPreviewData = async () => {
-    if (!selStu) return null;
-    
-    const { data: res } = await supabase.from('results').select('*, subjects(*)').eq('student_id', selStu.id);
-    const { data: com } = await supabase.from('comments').select('*').eq('student_id', selStu.id).single();
-    
-    const processed = (res||[]).map(x => ({ 
-      ...x, 
-      total: (x.score_note||0)+(x.score_cw||0)+(x.score_hw||0)+(x.score_test||0)+(x.score_ca||0)+(x.score_exam||0) 
-    }));
-    
-    return {
-      student: selStu,
-      school: school,
-      classInfo: curClass,
-      results: processed,
-      comments: com
-    };
-  };
-
-  const openPreview = async () => {
-    const data = await getPreviewData();
-    if (data) {
-      setShowPreview(data);
-    }
-  };
-
-  if (showPreview) {
-    return (
-      <div className="h-screen flex flex-col bg-gray-100">
-        <div className="bg-white p-4 shadow flex justify-between items-center">
-          <button onClick={() => setShowPreview(false)} className="flex items-center gap-2 text-gray-700 hover:text-gray-900">
-            <X size={20}/> Close Preview
-          </button>
-          <span className="font-bold">{showPreview.student.name}</span>
-          <PDFDownloadLink 
-            document={<ResultPDF {...showPreview} />} 
-            fileName={`${showPreview.student.name}_Result.pdf`} 
-            className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2">
-            <Download size={16}/> Download PDF
-          </PDFDownloadLink>
-        </div>
-        <PDFViewer className="flex-1 w-full">
-          <ResultPDF {...showPreview} />
-        </PDFViewer>
-      </div>
-    );
-  }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <div className="w-64 bg-white border-r flex flex-col">
-        <div className="p-4 border-b bg-blue-600 text-white">
-          <h2 className="font-bold">{profile.full_name}</h2>
-          <p className="text-xs opacity-75">Tutor Dashboard</p>
+    <div className="min-h-screen bg-slate-50 p-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-slate-800">Teacher Portal</h1>
+          <button onClick={onLogout} className="flex gap-2 text-red-600"><LogOut size={20}/> Logout</button>
         </div>
-        <div className="p-2 border-b">
-           <select className="w-full p-2 rounded border" onChange={e => handleClassSelect(classes.find(c => c.id === e.target.value))}>
-             {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-           </select>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {students.map(s => (
-            <div key={s.id} onClick={() => loadStudentData(s)} className={`p-3 cursor-pointer hover:bg-gray-100 ${selStu?.id === s.id ? 'bg-blue-50 border-r-4 border-blue-600' : ''}`}>
-              <p className="font-medium">{s.name}</p>
-              <p className="text-xs text-gray-500">{s.admission_no}</p>
-            </div>
-          ))}
-        </div>
-        <div className="p-4 border-t"><button onClick={onLogout} className="text-red-600 text-sm flex gap-2"><LogOut size={16}/> Logout</button></div>
-      </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {selStu ? (
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h1 className="text-2xl font-bold">{selStu.name}</h1>
-              <div className="flex items-center gap-4">
-                {saving && <span className="text-sm text-gray-500 flex gap-2"><Loader2 className="animate-spin" size={16}/> Saving...</span>}
-                <button 
-                  onClick={openPreview} 
-                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center gap-2">
-                  <Eye size={18}/> Preview Result
+        <div className="grid grid-cols-12 gap-6">
+          {/* Sidebar - Class/Student Selection */}
+          <div className="col-span-12 md:col-span-3 bg-white p-4 rounded-xl shadow h-[80vh] overflow-y-auto">
+            <h3 className="font-bold text-gray-500 mb-2">CLASSES</h3>
+            <div className="flex flex-wrap gap-2 mb-6">
+              {classes.map(c => (
+                <button key={c.id} onClick={() => loadStudents(c.id)}
+                  className={`px-3 py-1 rounded text-sm ${selectedClass === c.id ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>
+                  {c.name}
                 </button>
-              </div>
+              ))}
             </div>
 
-            <div className="bg-white p-6 rounded shadow mb-6">
-              <div className="flex justify-between mb-4">
-                 <h3 className="font-bold">Scores</h3>
-                 <button onClick={addSubject} className="text-sm bg-gray-100 px-2 py-1 rounded flex items-center gap-1"><Plus size={14}/> Add Subject</button>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 text-left">
-                      <th className="p-2">Subject</th>
-                      <th className="p-2 w-16">Note<br/>(5)</th>
-                      <th className="p-2 w-16">CW<br/>(5)</th>
-                      <th className="p-2 w-16">HW<br/>(5)</th>
-                      <th className="p-2 w-16">Test<br/>(15)</th>
-                      <th className="p-2 w-16">CA<br/>(15)</th>
-                      <th className="p-2 w-16">Exam<br/>(60)</th>
-                      <th className="p-2 w-16 font-bold">Total</th>
-                      <th className="p-2 w-20">Position</th>
-                      <th className="p-2 w-20">Highest</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {subjects.map(s => {
-                      const sc = scores[s.id] || {};
-                      const total = (sc.score_note||0)+(sc.score_cw||0)+(sc.score_hw||0)+(sc.score_test||0)+(sc.score_ca||0)+(sc.score_exam||0);
-                      return (
-                        <tr key={s.id} className="border-b">
-                          <td className="p-2 font-medium">{s.name}</td>
-                          {['note','cw','hw','test','ca','exam'].map(f => (
-                            <td key={f} className="p-2">
-                              <input 
-                                className="w-full text-center border rounded p-1" 
-                                type="number" 
-                                value={sc[`score_${f}`] || ''} 
-                                onChange={e => updateScore(s.id, f, e.target.value)} 
-                              />
-                            </td>
-                          ))}
-                          <td className="p-2 font-bold text-center">{total}</td>
-                          <td className="p-2">
-                            <input 
-                              className="w-full text-center border rounded p-1" 
-                              placeholder="1st" 
-                              value={sc.position || ''} 
-                              onChange={e => setScores(prev => ({ ...prev, [s.id]: { ...prev[s.id], position: e.target.value } }))} 
-                            />
-                          </td>
-                          <td className="p-2">
-                            <input 
-                              className="w-full text-center border rounded p-1" 
-                              placeholder="95" 
-                              value={sc.highest || ''} 
-                              onChange={e => setScores(prev => ({ ...prev, [s.id]: { ...prev[s.id], highest: e.target.value } }))} 
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="bg-white p-6 rounded shadow">
-              <h3 className="font-bold mb-2">Form Tutor Comment</h3>
-              <textarea 
-                className="w-full border rounded p-3 h-24" 
-                placeholder="Enter comment..." 
-                value={comment} 
-                onChange={e => setComment(e.target.value)} 
-              />
-            </div>
+            {selectedClass && (
+              <>
+                <h3 className="font-bold text-gray-500 mb-2">STUDENTS</h3>
+                <div className="space-y-1">
+                  {students.map(s => (
+                    <button key={s.id} onClick={() => selectStudent(s)}
+                      className={`w-full text-left px-3 py-2 rounded text-sm ${selectedStudent?.id === s.id ? 'bg-blue-50 text-blue-600 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}>
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
-        ) : (
-          <div className="flex h-full items-center justify-center text-gray-400">
-            <div className="text-center">
-              <User size={64} className="mx-auto mb-4 opacity-20"/>
-              <p>Select a student to begin</p>
+
+          {/* Main Content - Grading Area */}
+          <div className="col-span-12 md:col-span-9 bg-white p-6 rounded-xl shadow h-[80vh] overflow-y-auto">
+            {!selectedStudent ? (
+              <div className="h-full flex items-center justify-center text-gray-400">Select a student to begin grading</div>
+            ) : loading ? (
+              <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin"/></div>
+            ) : (
+              <div>
+                <div className="flex justify-between items-center mb-6 border-b pb-4">
+                  <div>
+                    <h2 className="text-xl font-bold">{selectedStudent.name}</h2>
+                    <p className="text-sm text-gray-500">{selectedStudent.admission_no}</p>
+                  </div>
+                  <button onClick={saveDetails} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex gap-2 items-center">
+                    <Save size={18} /> Save Comments
+                  </button>
+                </div>
+
+                <div className="mb-8">
+                  <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><FileText size={18}/> Subject Scores</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-gray-100 text-xs uppercase">
+                        <tr>
+                          <th className="p-2">Subject</th>
+                          <th className="p-2 w-16">Note (5)</th>
+                          <th className="p-2 w-16">CW (5)</th>
+                          <th className="p-2 w-16">HW (5)</th>
+                          <th className="p-2 w-16">Test (15)</th>
+                          <th className="p-2 w-16">CA (15)</th>
+                          <th className="p-2 w-16">Exam (60)</th>
+                          <th className="p-2 w-16">Total</th>
+                          <th className="p-2 w-16">Grade</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {subjects.map(sub => {
+                          const s = scores[sub.id] || {};
+                          return (
+                            <tr key={sub.id} className="border-b hover:bg-slate-50">
+                              <td className="p-2 font-medium">{sub.name}</td>
+                              {['score_note', 'score_cw', 'score_hw', 'score_test', 'score_ca', 'score_exam'].map(field => (
+                                <td key={field} className="p-1">
+                                  <input 
+                                    type="number" 
+                                    className="w-full border rounded p-1 text-center focus:ring-2 ring-blue-200 outline-none"
+                                    value={s[field] || ''}
+                                    onChange={(e) => handleScoreUpdate(sub.id, field, e.target.value)}
+                                  />
+                                </td>
+                              ))}
+                              <td className="p-2 font-bold text-center">{s.total || 0}</td>
+                              <td className="p-2 text-center text-xs">{s.grade || '-'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><User size={18}/> Behavioral Traits</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['cooperation', 'leadership', 'honesty', 'self_discipline', 'respect', 'responsibility', 'empathy'].map(trait => (
+                        <div key={trait}>
+                          <label className="text-xs uppercase font-bold text-gray-500 mb-1 block">{trait.replace('_', ' ')}</label>
+                          <select 
+                            className="w-full border rounded p-2 text-sm"
+                            value={behavior[trait] || ''}
+                            onChange={(e) => setBehavior({...behavior, [trait]: e.target.value})}
+                          >
+                            <option value="Excellent Degree">Excellent</option>
+                            <option value="Good Degree">Good</option>
+                            <option value="Fair Degree">Fair</option>
+                            <option value="Poor Degree">Poor</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Send size={18}/> Class Teacher's Comment</h3>
+                    <textarea 
+                      className="w-full h-32 border rounded p-3 text-sm"
+                      placeholder="Write a comprehensive comment about the student's performance..."
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                    ></textarea>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- PARENT/PUBLIC PORTAL ---
+const ParentPortal = ({ onBack }) => {
+  const [admNo, setAdmNo] = useState('');
+  const [pin, setPin] = useState('');
+  const [resultData, setResultData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const checkResult = async (e) => {
+    e.preventDefault();
+    setLoading(true); setError(''); setResultData(null);
+
+    // 1. Find Student
+    const { data: student, error: sErr } = await supabase
+      .from('students')
+      .select('*, schools(*), classes(*, profiles(full_name))')
+      .eq('admission_no', admNo)
+      .eq('parent_pin', pin)
+      .single();
+
+    if (sErr || !student) {
+      setLoading(false); return setError('Invalid Admission Number or PIN.');
+    }
+
+    // 2. Check Subscription
+    if (new Date(student.schools.subscription_expires_at) < new Date()) {
+      setLoading(false); return setError('School subscription has expired. Please contact the administration.');
+    }
+
+    // 3. Fetch Data
+    const { data: results } = await supabase.from('results').select('*, subjects(name)').eq('student_id', student.id);
+    const { data: comments } = await supabase.from('comments').select('*').eq('student_id', student.id).single();
+    const { data: behaviors } = await supabase.from('behaviors').select('*').eq('student_id', student.id).single();
+
+    if (!comments?.approved_by_principal) {
+      setLoading(false); return setError('Result is being processed and has not been approved by the principal yet.');
+    }
+
+    // Process results for PDF
+    const processedResults = results.map(r => ({
+      ...r,
+      total: (r.score_note||0)+(r.score_cw||0)+(r.score_hw||0)+(r.score_test||0)+(r.score_ca||0)+(r.score_exam||0)
+    }));
+
+    setResultData({
+      student,
+      school: student.schools,
+      classInfo: student.classes,
+      results: processedResults,
+      comments,
+      behaviors
+    });
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-900 to-slate-900 flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div className="bg-blue-600 p-6 text-center">
+          <School className="mx-auto text-white mb-2" size={40} />
+          <h1 className="text-2xl font-bold text-white">Student Result Portal</h1>
+          <p className="text-blue-100 text-sm">Access your academic records securely</p>
+        </div>
+
+        {!resultData ? (
+          <form onSubmit={checkResult} className="p-8 space-y-6">
+            {error && <div className="p-3 bg-red-100 text-red-600 text-xs rounded flex items-center gap-2"><AlertCircle size={16}/> {error}</div>}
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Admission Number</label>
+              <div className="relative">
+                <User className="absolute left-3 top-3 text-gray-400" size={18} />
+                <input 
+                  type="text" 
+                  className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="e.g. 2024/001"
+                  value={admNo}
+                  onChange={e => setAdmNo(e.target.value)}
+                  required
+                />
+              </div>
             </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Access PIN</label>
+              <div className="relative">
+                <Key className="absolute left-3 top-3 text-gray-400" size={18} />
+                <input 
+                  type="password" 
+                  className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="••••"
+                  value={pin}
+                  onChange={e => setPin(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <button disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition flex justify-center">
+              {loading ? <Loader2 className="animate-spin" /> : 'Check Result'}
+            </button>
+            <button type="button" onClick={onBack} className="w-full text-center text-sm text-gray-500 hover:text-gray-700">Back to Login</button>
+          </form>
+        ) : (
+          <div className="p-8 text-center space-y-6">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto text-green-600">
+              <CheckCircle size={32} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">{resultData.student.name}</h2>
+              <p className="text-gray-500">{resultData.classInfo.name} • {resultData.school.current_term}</p>
+            </div>
+            
+            <PDFDownloadLink
+              document={<ResultPDF {...resultData} />}
+              fileName={`${resultData.student.name}_Result.pdf`}
+              className="block w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2"
+            >
+              {({ loading }) => loading ? 'Generating PDF...' : <><Download size={20}/> Download Report Card</>}
+            </PDFDownloadLink>
+            
+            <button onClick={() => setResultData(null)} className="text-gray-500 text-sm hover:underline">Check Another Result</button>
           </div>
         )}
       </div>
@@ -794,158 +984,55 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 };
 
 // --- AUTH COMPONENT ---
-const Auth = ({ onLogin, onParent }) => {
-  const [mode, setMode] = useState('login'); 
-  const [role, setRole] = useState('teacher');
-  const [data, setData] = useState({ email: '', password: '', name: '', pin: '', schoolCode: '' });
+const Auth = ({ onLogin }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false); // Only for School Owners
+  const [fullName, setFullName] = useState('');
 
-  const CENTRAL_USER = "oluwatoyin";
-  const CENTRAL_PASS = "Funmilola";
-
-  const handleSubmit = async (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
+    let error;
 
-    try {
-      if (mode === 'central') {
-        if (data.email.trim() === CENTRAL_USER && data.password.trim() === CENTRAL_PASS) {
-          onLogin({ role: 'central' });
-        } else alert('Invalid Credentials');
-        return;
-      }
+    if (isRegistering) {
+      const { error: err } = await supabase.auth.signUp({ 
+        email, password, options: { data: { full_name: fullName, role: 'school_admin' } } 
+      });
+      error = err;
+      if (!error) alert('Check your email to confirm registration!');
+    } else {
+      const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+      error = err;
+    }
 
-      if (mode === 'register') {
-        if (role === 'admin') {
-          const { data: pinRes, error: pinErr } = await supabase.from('subscription_pins').select('*').eq('code', data.pin.trim()).eq('is_used', false).single();
-          if (pinErr || !pinRes) throw new Error("Invalid/Used PIN");
-
-          const { data: auth, error: authErr } = await supabase.auth.signUp({ email: data.email, password: data.password });
-          if (authErr) throw authErr;
-
-          const expiry = new Date(); expiry.setMonth(expiry.getMonth() + pinRes.duration_months);
-          const { data: school, error: schErr } = await supabase.from('schools').insert({
-            owner_id: auth.user.id, name: 'My School', max_students: pinRes.student_limit, subscription_expires_at: expiry.toISOString()
-          }).select().single();
-          if (schErr) throw schErr;
-
-          await supabase.from('profiles').insert({ id: auth.user.id, full_name: data.name, role: 'admin', school_id: school.id });
-          await supabase.from('subscription_pins').update({ is_used: true, used_by_email: data.email }).eq('id', pinRes.id);
-          
-          alert('Registered! Please Login.'); setMode('login');
-
-        } else {
-          if (!data.schoolCode) throw new Error("School Code Required");
-          const { data: sch, error: sErr } = await supabase.from('schools').select('id').eq('id', data.schoolCode.trim()).single();
-          if (sErr || !sch) throw new Error("Invalid School Code");
-
-          const { data: auth, error: authErr } = await supabase.auth.signUp({ email: data.email, password: data.password });
-          if (authErr) throw authErr;
-
-          await supabase.from('profiles').insert({ id: auth.user.id, full_name: data.name, role: 'teacher', school_id: sch.id });
-          alert('Registered! Please Login.'); setMode('login');
-        }
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email: data.email, password: data.password });
-        if (error) throw error;
-      }
-    } catch (err) { alert(err.message); } finally { setLoading(false); }
+    if (error) alert(error.message);
+    setLoading(false);
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
-        <div className="text-center mb-6">
-          <School size={48} className="mx-auto text-blue-600 mb-2"/>
-          <h1 className="text-2xl font-bold text-gray-800">School Result System</h1>
-        </div>
-        
-        <div className="flex justify-center mb-6 gap-4 text-sm font-bold text-gray-400">
-          {['login','register','central'].map(m => (
-            <button key={m} onClick={() => setMode(m)} className={`pb-1 capitalize ${mode === m ? 'text-blue-600 border-b-2 border-blue-600' : ''}`}>
-              {m === 'central' ? 'Admin' : m}
-            </button>
-          ))}
-        </div>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'register' && (
-            <>
-              <input placeholder="Full Name" className="w-full p-3 border rounded-lg" required value={data.name} onChange={e => setData({...data, name: e.target.value})} />
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setRole('admin')} className={`flex-1 p-2 rounded-lg border ${role === 'admin' ? 'bg-blue-600 text-white' : 'bg-gray-50'}`}>School Owner</button>
-                <button type="button" onClick={() => setRole('teacher')} className={`flex-1 p-2 rounded-lg border ${role === 'teacher' ? 'bg-blue-600 text-white' : 'bg-gray-50'}`}>Teacher</button>
-              </div>
-              {role === 'admin' ? 
-                <input placeholder="Subscription PIN" className="w-full p-3 border-2 border-orange-200 bg-orange-50 rounded-lg" required value={data.pin} onChange={e => setData({...data, pin: e.target.value})} /> :
-                <input placeholder="School ID Code" className="w-full p-3 border rounded-lg" required value={data.schoolCode} onChange={e => setData({...data, schoolCode: e.target.value})} />
-              }
-            </>
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+        <h2 className="text-2xl font-bold mb-6 text-center text-slate-800">
+          {isRegistering ? 'Register School' : 'Staff Login'}
+        </h2>
+        <form onSubmit={handleAuth} className="space-y-4">
+          {isRegistering && (
+             <input type="text" placeholder="Full Name" className="w-full border p-3 rounded" value={fullName} onChange={e=>setFullName(e.target.value)} required />
           )}
-          
-          <input placeholder={mode === 'central' ? 'Username' : 'Email'} className="w-full p-3 border rounded-lg" required value={data.email} onChange={e => setData({...data, email: e.target.value})} />
-          <input type="password" placeholder="Password" className="w-full p-3 border rounded-lg" required value={data.password} onChange={e => setData({...data, password: e.target.value})} />
-          
-          <button disabled={loading} className={`w-full p-3 rounded-lg text-white font-bold ${mode === 'central' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
-            {loading ? 'Processing...' : 'Submit'}
+          <input type="email" placeholder="Email" className="w-full border p-3 rounded" value={email} onChange={e=>setEmail(e.target.value)} required />
+          <input type="password" placeholder="Password" className="w-full border p-3 rounded" value={password} onChange={e=>setPassword(e.target.value)} required />
+          <button disabled={loading} className="w-full bg-slate-900 text-white py-3 rounded font-bold hover:bg-slate-800">
+            {loading ? <Loader2 className="animate-spin mx-auto"/> : (isRegistering ? 'Sign Up' : 'Login')}
           </button>
         </form>
-
-        {mode === 'login' && (
-          <button onClick={onParent} className="w-full mt-4 border-2 border-green-600 text-green-700 p-3 rounded-lg font-bold hover:bg-green-50 flex justify-center gap-2">
-            <User size={18}/> Parent Portal
+        <div className="mt-4 text-center text-sm text-gray-500 space-y-2">
+          <button onClick={() => setIsRegistering(!isRegistering)} className="hover:text-blue-600">
+            {isRegistering ? 'Already have an account? Login' : 'Create School Account'}
           </button>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// --- PARENT PORTAL ---
-const ParentPortal = ({ onBack }) => {
-  const [adm, setAdm] = useState('');
-  const [pin, setPin] = useState('');
-  const [resData, setResData] = useState(null);
-
-  const check = async (e) => {
-    e.preventDefault();
-    const { data: s } = await supabase.from('students').select('*, schools(*), classes(*, profiles(full_name))').eq('admission_no', adm).eq('parent_pin', pin).single();
-    if (!s) return alert('Invalid details');
-    const { data: r } = await supabase.from('results').select('*, subjects(*)').eq('student_id', s.id);
-    const { data: c } = await supabase.from('comments').select('*').eq('student_id', s.id).single();
-    
-    const processed = (r||[]).map(x => ({ ...x, total: (x.score_note||0)+(x.score_cw||0)+(x.score_hw||0)+(x.score_test||0)+(x.score_ca||0)+(x.score_exam||0) }));
-    setResData({ student: s, school: s.schools, classInfo: s.classes, results: processed, comments: c });
-  };
-
-  if (resData) return (
-    <div className="h-screen flex flex-col bg-gray-100">
-      <div className="bg-white p-4 shadow flex justify-between items-center">
-        <button onClick={() => setResData(null)} className="flex items-center gap-2">
-          <X size={20}/> Back
-        </button>
-        <span className="font-bold">{resData.student.name}</span>
-        <PDFDownloadLink document={<ResultPDF {...resData} />} fileName="Result.pdf" className="bg-blue-600 text-white px-3 py-2 rounded flex items-center gap-2">
-          <Download size={16}/> Download
-        </PDFDownloadLink>
-      </div>
-      <PDFViewer className="flex-1 w-full"><ResultPDF {...resData} /></PDFViewer>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100">
-      <form onSubmit={check} className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-sm space-y-4">
-        <div className="text-center mb-6">
-          <User size={48} className="mx-auto text-green-600 mb-2"/>
-          <h2 className="text-xl font-bold">Parent Portal</h2>
-          <p className="text-sm text-gray-500">Check Student Result</p>
         </div>
-        <input placeholder="Admission Number" className="w-full p-3 border rounded-lg" value={adm} onChange={e => setAdm(e.target.value)} required />
-        <input type="password" placeholder="Parent PIN" className="w-full p-3 border rounded-lg" value={pin} onChange={e => setPin(e.target.value)} required />
-        <button className="w-full bg-green-600 hover:bg-green-700 text-white p-3 rounded-lg font-bold">Check Result</button>
-        <button type="button" onClick={onBack} className="w-full text-center text-sm text-gray-500 hover:text-gray-700">Back to Login</button>
-      </form>
+      </div>
     </div>
   );
 };
@@ -954,39 +1041,64 @@ const ParentPortal = ({ onBack }) => {
 const App = () => {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [view, setView] = useState('auth'); 
+  const [view, setView] = useState('landing'); // landing, parent
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) loadProfile(session.user.id);
+      if (session) fetchProfile(session.user.id);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, sess) => {
-      setSession(sess);
-      if (sess) loadProfile(sess.user.id); else { setProfile(null); setView('auth'); }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) fetchProfile(session.user.id);
+      else setProfile(null);
     });
+
     return () => subscription.unsubscribe();
   }, []);
 
-  const loadProfile = async (id) => {
-    const { data } = await supabase.from('profiles').select('*').eq('id', id).single();
+  const fetchProfile = async (userId) => {
+    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     setProfile(data);
   };
 
-  if (view === 'central') return <CentralAdmin onLogout={() => setView('auth')} />;
-  if (view === 'parent') return <ParentPortal onBack={() => setView('auth')} />;
+  if (!session) {
+    if (view === 'parent') return <ParentPortal onBack={() => setView('landing')} />;
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+          <LayoutDashboard size={64} className="text-blue-600 mb-6" />
+          <h1 className="text-4xl font-extrabold text-slate-900 mb-4">Smart School Manager</h1>
+          <p className="text-slate-600 mb-8 max-w-md">Seamless results processing, student management, and report generation for modern schools.</p>
+          <div className="flex gap-4 flex-col sm:flex-row w-full max-w-sm">
+            <button onClick={() => setView('auth')} className="flex-1 bg-slate-900 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-slate-800 transition">
+              Staff Login
+            </button>
+            <button onClick={() => setView('parent')} className="flex-1 bg-white text-blue-600 border-2 border-blue-600 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-50 transition">
+              Check Result
+            </button>
+          </div>
+        </div>
+        {view === 'auth' && (
+          <div className="fixed inset-0 bg-white/90 backdrop-blur-sm z-50 flex items-center justify-center">
+             <div className="w-full max-w-md relative">
+               <button onClick={() => setView('landing')} className="absolute -top-10 right-0 p-2 text-gray-600"><X/></button>
+               <Auth />
+             </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
-  if (!session) return <Auth onLogin={(d) => { if(d.role === 'central') setView('central'); }} onParent={() => setView('parent')} />;
-  
-  if (!profile) return (
-    <div className="h-screen flex items-center justify-center">
-      <Loader2 className="animate-spin text-blue-600" size={48}/>
-    </div>
-  );
+  if (!profile) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin" size={40}/></div>;
 
-  return profile.role === 'admin' 
-    ? <SchoolAdmin profile={profile} onLogout={() => supabase.auth.signOut()} /> 
-    : <TeacherDashboard profile={profile} onLogout={() => supabase.auth.signOut()} />;
+  if (profile.role === 'central_admin') return <CentralAdmin onLogout={() => supabase.auth.signOut()} />;
+  if (profile.role === 'school_admin') return <SchoolAdmin profile={profile} onLogout={() => supabase.auth.signOut()} />;
+  if (profile.role === 'teacher') return <TeacherPortal profile={profile} onLogout={() => supabase.auth.signOut()} />;
+
+  return <div className="p-10 text-center">Access Denied. Unknown Role.</div>;
 };
 
 export default App;
