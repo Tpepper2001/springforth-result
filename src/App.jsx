@@ -5,7 +5,7 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, User, Download,
-  X, Eye, Trash2, ShieldCheck, Save, Menu, CheckCircle
+  X, Eye, Trash2, ShieldCheck, Save, Menu
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -357,9 +357,9 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     
     if(!error) {
         setSchool(prev => ({ ...prev, ...otherUpdates, logo_url }));
-        alert('School Info Updated!');
+        window.alert('School Info Updated!');
     } else {
-        alert('Update Failed: ' + error.message);
+        window.alert('Update Failed: ' + error.message);
     }
     setLoading(false);
   };
@@ -368,7 +368,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     e.preventDefault();
     const form = new FormData(e.target);
     const data = Object.fromEntries(form.entries());
-    if (students.length >= school.max_students) return alert("Limit reached!");
+    if (students.length >= school.max_students) return window.alert("Limit reached!");
     
     const pin = generatePIN();
     const autoAdm = generateAdmissionNumber();
@@ -377,8 +377,8 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       school_id: school.id, name: data.name, admission_no: autoAdm,
       gender: data.gender, class_id: data.class_id, parent_pin: pin
     });
-    if (error) alert(error.message); 
-    else { alert(`Added! Adm: ${autoAdm}, PIN: ${pin}`); e.target.reset(); fetchSchoolData(); }
+    if (error) window.alert(error.message); 
+    else { window.alert(`Added! Adm: ${autoAdm}, PIN: ${pin}`); e.target.reset(); fetchSchoolData(); }
   };
 
   const addConfigField = async () => {
@@ -531,7 +531,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                     </td>
                                     <td className="p-3 flex gap-2">
                                         <button onClick={() => loadStudentResult(s, 'full')} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Eye size={16}/></button>
-                                        <button onClick={async()=>{if(confirm('Delete?')) { await supabase.from('students').delete().eq('id', s.id); fetchSchoolData(); }}} className="text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 size={16}/></button>
+                                        <button onClick={async()=>{if(window.confirm('Delete?')) { await supabase.from('students').delete().eq('id', s.id); fetchSchoolData(); }}} className="text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 size={16}/></button>
                                     </td>
                                 </tr>
                             )})}
@@ -556,7 +556,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                 <div className="grid grid-cols-2 gap-4">{classes.map(c=>(
                     <div key={c.id} className="border p-4 rounded flex justify-between items-center bg-gray-50">
                         <div><h3 className="font-bold">{c.name}</h3><span className="text-xs text-gray-500">{c.profiles?.full_name || 'No Tutor Assigned'}</span></div>
-                        <button onClick={async()=>{if(confirm('Delete Class?')) { await supabase.from('classes').delete().eq('id', c.id); fetchSchoolData(); }}} className="text-red-500"><Trash2 size={16}/></button>
+                        <button onClick={async()=>{if(window.confirm('Delete Class?')) { await supabase.from('classes').delete().eq('id', c.id); fetchSchoolData(); }}} className="text-red-500"><Trash2 size={16}/></button>
                     </div>
                 ))}</div>
             </div>
@@ -659,7 +659,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
               <div className="bg-white p-4 shadow flex justify-between items-center">
                   <button onClick={() => setPreviewData(null)} className="flex items-center gap-2"><X /> Close</button>
                   <div className="flex gap-2">
-                     <button onClick={async()=>{if(confirm('Submit to Admin?')){ await saveResultToDB('awaiting_approval'); setPreviewData(null); }}} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2"><ShieldCheck size={18}/> Submit for Approval</button>
+                     <button onClick={async()=>{if(window.confirm('Submit to Admin?')){ await saveResultToDB('awaiting_approval'); setPreviewData(null); }}} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2"><ShieldCheck size={18}/> Submit for Approval</button>
                      <PDFDownloadLink document={<ResultPDF {...previewData} logoBase64={previewData.logoBase64} />} fileName="Result.pdf"><button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Download /> PDF</button></PDFDownloadLink>
                   </div>
               </div>
@@ -681,8 +681,8 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         <div className="flex-1 overflow-y-auto">
             {curClass && (
                 <>
-                <div className="p-3 bg-gray-100 font-bold text-xs flex justify-between border-b"><span>SUBJECTS</span><button onClick={async()=>{const n=prompt('Subject Name:'); if(n){await supabase.from('subjects').insert({class_id:curClass.id,name:n}); loadClass(curClass.id);}}}><Plus size={16}/></button></div>
-                <div className="p-2 flex flex-wrap gap-2 border-b">{subjects.map(s => (<span key={s.id} className="bg-blue-50 text-blue-800 text-xs px-2 py-1 rounded flex gap-1 border border-blue-200">{s.name} <button onClick={async()=>{if(confirm('Del?')) {await supabase.from('subjects').delete().eq('id', s.id); loadClass(curClass.id);}}} className="text-red-500">×</button></span>))}</div>
+                <div className="p-3 bg-gray-100 font-bold text-xs flex justify-between border-b"><span>SUBJECTS</span><button onClick={async()=>{const n=window.prompt('Subject Name:'); if(n){await supabase.from('subjects').insert({class_id:curClass.id,name:n}); loadClass(curClass.id);}}}><Plus size={16}/></button></div>
+                <div className="p-2 flex flex-wrap gap-2 border-b">{subjects.map(s => (<span key={s.id} className="bg-blue-50 text-blue-800 text-xs px-2 py-1 rounded flex gap-1 border border-blue-200">{s.name} <button onClick={async()=>{if(window.confirm('Del?')) {await supabase.from('subjects').delete().eq('id', s.id); loadClass(curClass.id);}}} className="text-red-500">×</button></span>))}</div>
                 <div className="p-3 bg-gray-100 font-bold text-xs border-b">STUDENTS</div>
                 {students.map(s => (
                     <div key={s.id} onClick={() => loadStudentData(s)} className={`p-3 border-b cursor-pointer hover:bg-gray-50 text-sm ${selectedStudent?.id === s.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''}`}>{s.name}</div>
@@ -774,7 +774,7 @@ const Auth = ({ onLogin, onParent }) => {
                     const { data: school } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: 'My School', max_students: pinData.student_limit }).select().single();
                     await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: school.id });
                     await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
-                    alert("Registration Successful! Please Login."); setMode('login');
+                    window.alert("Registration Successful! Please Login."); setMode('login');
                 }
             } else if (mode === 'teacher_reg') {
                  const { data: sch } = await supabase.from('schools').select('id').eq('id', form.schoolCode).single();
@@ -782,13 +782,13 @@ const Auth = ({ onLogin, onParent }) => {
                  const { data: auth } = await supabase.auth.signUp({ email: form.email, password: form.password });
                  if(auth.user){
                     await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'teacher', school_id: sch.id });
-                    alert("Teacher Registered! Please Login."); setMode('login');
+                    window.alert("Teacher Registered! Please Login."); setMode('login');
                  }
             } else {
                 const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
                 if (error) throw error;
             }
-        } catch (err) { alert(err.message); } finally { setLoading(false); }
+        } catch (err) { window.alert(err.message); } finally { setLoading(false); }
     };
 
     return (
@@ -825,10 +825,10 @@ const ParentPortal = ({ onBack }) => {
     const fetchResult = async (e) => {
         e.preventDefault(); setLoading(true);
         const { data: stu } = await supabase.from('students').select('*, schools(*), classes(*), comments(*), results(*, subjects(*))').eq('admission_no', creds.adm).eq('parent_pin', creds.pin).maybeSingle();
-        if (!stu) { alert('Invalid Credentials'); setLoading(false); return; }
+        if (!stu) { window.alert('Invalid Credentials'); setLoading(false); return; }
         
         const comm = Array.isArray(stu.comments) ? stu.comments[0] : stu.comments;
-        if (comm?.submission_status !== 'approved') { alert("Result not yet approved by school."); setLoading(false); return; }
+        if (comm?.submission_status !== 'approved') { window.alert("Result not yet approved by school."); setLoading(false); return; }
 
         const behaviors = comm?.behaviors ? JSON.parse(comm.behaviors) : {};
         const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviors[trait] || 'Good' }));
