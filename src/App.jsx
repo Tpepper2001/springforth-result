@@ -5,7 +5,7 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, Copy, Check, User, Download,
-  X, Eye, Settings, Users, BookOpen, FileText, Trash2, ClipboardCopy, FileBarChart
+  X, Eye, Settings, Users, BookOpen, FileText, Trash2, ClipboardCopy, FileBarChart, Globe
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -89,18 +89,14 @@ const pdfStyles = StyleSheet.create({
 const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = [], reportType = 'full' }) => {
   const isMidTerm = reportType === 'mid';
   
-  // Calculate Totals based on report type
   const processedResults = results.map(r => {
     let total = 0;
     if (isMidTerm) {
-      // Mid Term: Note + CW + HW + Test + CA (Max 40)
       total = (r.score_note||0) + (r.score_cw||0) + (r.score_hw||0) + (r.score_test||0) + (r.score_ca||0);
     } else {
-      // Full Term: Everything + Exam (Max 100)
       total = (r.score_note||0) + (r.score_cw||0) + (r.score_hw||0) + (r.score_test||0) + (r.score_ca||0) + (r.score_exam||0);
     }
-    const { grade, remark } = calculateGrade(isMidTerm ? (total / 40) * 100 : total); // Scale mid-term for grade calc or just leave logic
-    
+    const { grade, remark } = calculateGrade(isMidTerm ? (total / 40) * 100 : total);
     return { ...r, total, grade, remark };
   });
 
@@ -144,11 +140,9 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
           <View style={pdfStyles.tableHeader}>
             <Text style={[pdfStyles.cell, pdfStyles.colSN, pdfStyles.cellCenter]}>S/N</Text>
             <Text style={[pdfStyles.cell, pdfStyles.colSubject]}>SUBJECT</Text>
-            {/* Dynamic Headers */}
             <Text style={[pdfStyles.cell, pdfStyles.colScore, pdfStyles.cellCenter]}>CA</Text>
             <Text style={[pdfStyles.cell, pdfStyles.colScore, pdfStyles.cellCenter]}>TEST</Text>
             {!isMidTerm && <Text style={[pdfStyles.cell, pdfStyles.colScore, pdfStyles.cellCenter]}>EXAM</Text>}
-            
             <Text style={[pdfStyles.cell, pdfStyles.colTotal, pdfStyles.cellCenter]}>TOTAL</Text>
             {!isMidTerm && <Text style={[pdfStyles.cell, pdfStyles.colGrade, pdfStyles.cellCenter]}>GRADE</Text>}
             <Text style={[pdfStyles.cell, pdfStyles.colRemark]}>REMARK</Text>
@@ -157,15 +151,11 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
             <View key={i} style={pdfStyles.tableRow}>
               <Text style={[pdfStyles.cell, pdfStyles.colSN, pdfStyles.cellCenter]}>{i + 1}</Text>
               <Text style={[pdfStyles.cell, pdfStyles.colSubject]}>{r.subjects?.name}</Text>
-              
-              {/* Scores: For PDF space, we sum Note+CW+HW+CA into one 'CA' column, or show specific cols. 
-                  Let's show Total CA (Note+CW+HW+CA) and Test Separately for clarity */}
               <Text style={[pdfStyles.cell, pdfStyles.colScore, pdfStyles.cellCenter]}>
                  {(r.score_note||0) + (r.score_cw||0) + (r.score_hw||0) + (r.score_ca||0)}
               </Text>
               <Text style={[pdfStyles.cell, pdfStyles.colScore, pdfStyles.cellCenter]}>{r.score_test}</Text>
               {!isMidTerm && <Text style={[pdfStyles.cell, pdfStyles.colScore, pdfStyles.cellCenter]}>{r.score_exam}</Text>}
-
               <Text style={[pdfStyles.cell, pdfStyles.colTotal, pdfStyles.cellCenter]}>{r.total}</Text>
               {!isMidTerm && <Text style={[pdfStyles.cell, pdfStyles.colGrade, pdfStyles.cellCenter]}>{r.grade}</Text>}
               <Text style={[pdfStyles.cell, pdfStyles.colRemark]}>{isMidTerm ? (r.total >= 20 ? 'Pass' : 'Fail') : r.remark}</Text>
@@ -244,7 +234,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       setClasses(cls || []);
 
       const { data: stu } = await supabase.from('students')
-        .select('*, classes(name), comments(submission_status, principal_comment)')
+        .select('*, classes(name), comments(submission_status)')
         .eq('school_id', s.id)
         .order('name');
       setStudents(stu || []);
@@ -322,6 +312,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       const { data: results } = await supabase.from('results').select('*, subjects(*)').eq('student_id', student.id);
       const { data: comments } = await supabase.from('comments').select('*').eq('student_id', student.id).single();
       
+      // Safety check for behaviors parsing
       const behaviorList = comments?.behaviors ? JSON.parse(comments.behaviors) : [];
 
       setPreviewData({
@@ -330,7 +321,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
           classInfo: student.classes,
           results: results || [],
           comments: comments || {},
-          behaviors: behaviorList.map(t => ({ trait: t, rating: 'Good' })) // Simplify behavior mapping if empty
+          behaviors: behaviorList.map(t => ({ trait: t, rating: 'Good' })) 
       });
   };
 
@@ -460,6 +451,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                 <th className="p-3">Name</th>
                                 <th className="p-3">Adm No</th>
                                 <th className="p-3">Class</th>
+                                <th className="p-3">Status</th>
                                 <th className="p-3">Result Access</th>
                                 <th className="p-3">Action</th>
                             </tr>
@@ -470,6 +462,12 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                     <td className="p-3">{s.name}</td>
                                     <td className="p-3">{s.admission_no}</td>
                                     <td className="p-3">{s.classes?.name}</td>
+                                    <td className="p-3">
+                                        {s.comments?.[0]?.submission_status === 'published' ? 
+                                         <span className="text-green-600 font-bold text-xs">Published</span> : 
+                                         <span className="text-gray-400 text-xs">Draft</span>
+                                        }
+                                    </td>
                                     <td className="p-3 flex gap-2">
                                         <button onClick={() => loadStudentResult(s, 'mid')} className="bg-blue-50 text-blue-600 text-xs px-2 py-1 rounded hover:bg-blue-100">
                                            Mid-Term
@@ -621,7 +619,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     save(); 
   };
 
-  const saveResultToDB = async () => {
+  const saveResultToDB = async (status = null) => {
     if(!selectedStudent) return;
     
     const resultsPayload = subjects.map(s => {
@@ -640,12 +638,15 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     await supabase.from('results').delete().eq('student_id', selectedStudent.id);
     await supabase.from('results').insert(resultsPayload);
 
-    await supabase.from('comments').upsert({
+    const payload = {
       student_id: selectedStudent.id,
       school_id: curClass.school_id,
       tutor_comment: comment,
       behaviors: JSON.stringify(behaviors)
-    }, { onConflict: 'student_id' });
+    };
+    if (status) payload.submission_status = status;
+
+    await supabase.from('comments').upsert(payload, { onConflict: 'student_id' });
   };
 
   const handlePreview = async (type) => {
@@ -667,6 +668,13 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setShowPreview(true);
   };
 
+  const publishResult = async () => {
+    if(!window.confirm("Publish this result? Parents will be able to see it immediately.")) return;
+    await saveResultToDB('published');
+    alert("Result Published!");
+    setShowPreview(false);
+  }
+
   if (showPreview) {
       return (
           <div className="h-screen flex flex-col bg-gray-100">
@@ -674,6 +682,9 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   <button onClick={() => setShowPreview(false)} className="flex items-center gap-2"><X /> Close</button>
                   <h2 className="font-bold">{previewData.student.name} - {reportType === 'mid' ? 'Mid-Term' : 'Full-Term'}</h2>
                   <div className="flex gap-2">
+                     <button onClick={publishResult} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 mr-4">
+                         <Globe size={18}/> Publish Result
+                     </button>
                      <PDFDownloadLink document={<ResultPDF {...previewData} reportType={reportType} />} fileName={`${selectedStudent.name}_${reportType}.pdf`}>
                         <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Download /> Download</button>
                      </PDFDownloadLink>
@@ -964,16 +975,24 @@ const ParentPortal = ({ onBack }) => {
             .eq('admission_no', creds.adm).eq('parent_pin', creds.pin).single();
 
         if (error || !stu) return window.alert('Invalid Admission No or PIN');
+        
+        // Strict Check: Parents only see published results
+        const isPublished = stu.comments?.[0]?.submission_status === 'published';
+        if (!isPublished) return alert("Result not yet published by Class Teacher.");
 
         const processed = stu.results.map(r => ({
             ...r,
             total: (r.score_note||0)+(r.score_cw||0)+(r.score_hw||0)+(r.score_test||0)+(r.score_ca||0)+(r.score_exam||0)
         }));
 
+        // Safe check for behaviors
+        const commentData = stu.comments?.[0] || {};
+        const behaviors = commentData.behaviors ? JSON.parse(commentData.behaviors) : [];
+
         setData({
             student: stu, school: stu.schools, classInfo: stu.classes,
-            results: processed, comments: stu.comments[0],
-            behaviors: JSON.parse(stu.comments[0].behaviors || '[]').map(k => ({ trait: k, rating: 'Good' })) 
+            results: processed, comments: commentData,
+            behaviors: behaviors.map(k => ({ trait: k, rating: 'Good' })) 
         });
     };
 
