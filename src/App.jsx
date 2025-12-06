@@ -5,14 +5,14 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, Copy, Check, User, Download,
-  X, Eye, CheckCircle, Send, Settings, Users, BookOpen, FileText, Trash2, AlertCircle, Unlock
+  X, Eye, CheckCircle, Send, Settings, Users, BookOpen, FileText, Trash2, AlertCircle, Unlock, ClipboardCopy
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
 // 1. Enter your NEW Project URL
 const supabaseUrl = 'https://xtciiatfetqecsfxoicq.supabase.co'; 
 
-// 2. PASTE YOUR NEW 'ANON PUBLIC' KEY BELOW (From Dashboard -> Project Settings -> API)
+// 2. PASTE YOUR NEW 'ANON PUBLIC' KEY BELOW
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0Y2lpYXRmZXRxZWNzZnhvaWNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwNDEyMDIsImV4cCI6MjA4MDYxNzIwMn0.81K9w-XbCHWRWmKkq3rcJHxslx3hs5mGCSNIvyJRMuw'; 
 
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -298,18 +298,15 @@ const SchoolAdmin = ({ profile, onLogout }) => {
   const approveResult = async (id, comment) => {
       await supabase.from('comments').update({ principal_comment: comment }).eq('id', id);
       setApprovals(prev => prev.filter(x => x.id !== id));
-      fetchSchoolData(); // Refresh list to show unlocked status properly in Students tab
+      fetchSchoolData();
   };
 
-  // UNLOCK FUNCTION
   const unlockResult = async (studentId) => {
-      if(!window.confirm("Unlock this result? This will revert the status to 'draft' and remove principal approval, allowing the teacher to edit again.")) return;
-      
+      if(!window.confirm("Unlock this result? This will revert the status to 'draft'.")) return;
       await supabase.from('comments').update({
           submission_status: 'draft',
           principal_comment: null
       }).eq('student_id', studentId);
-      
       window.alert("Result unlocked.");
       fetchSchoolData();
   };
@@ -341,6 +338,26 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         {activeTab === 'dashboard' && (
            <div>
                <h1 className="text-2xl font-bold mb-6">Welcome, {school?.name}</h1>
+               
+               {/* NEW: School ID Card */}
+               {school && (
+                   <div className="bg-blue-600 text-white p-6 rounded-lg shadow-lg mb-6 flex flex-col md:flex-row justify-between items-center">
+                       <div>
+                           <h2 className="text-lg font-bold mb-1">Teacher Registration Code</h2>
+                           <p className="text-blue-100 text-sm">Give this code to your teachers so they can register.</p>
+                       </div>
+                       <div className="flex items-center gap-2 mt-4 md:mt-0 bg-blue-800 p-3 rounded-lg">
+                           <code className="text-xl font-mono font-bold tracking-wider">{school.id}</code>
+                           <button 
+                               onClick={() => { navigator.clipboard.writeText(school.id); window.alert('Code Copied!'); }}
+                               className="hover:text-blue-200 ml-2" title="Copy Code"
+                           >
+                               <ClipboardCopy size={20} />
+                           </button>
+                       </div>
+                   </div>
+               )}
+
                <div className="grid grid-cols-3 gap-6">
                    <div className="bg-white p-6 rounded shadow">
                        <h3 className="text-gray-500 text-sm">Total Students</h3>
@@ -877,7 +894,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
 // 3. AUTH & PARENT PORTAL
 const Auth = ({ onLogin, onParent }) => {
-    const [mode, setMode] = useState('login');
+    const [mode, setMode] = useState('login'); // 'login', 'school_reg', 'teacher_reg', 'central'
     const [loading, setLoading] = useState(false);
     const [form, setForm] = useState({ email: '', password: '', name: '', pin: '', schoolCode: '' });
 
@@ -889,48 +906,49 @@ const Auth = ({ onLogin, onParent }) => {
                 if (form.email === 'oluwatoyin' && form.password === 'Funmilola') onLogin({ role: 'central' });
                 else window.alert('Invalid Admin Credentials');
             } 
-            else if (mode === 'register') {
-                if (form.pin) { 
-                    const { data: pinData } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
-                    if (!pinData) throw new Error('Invalid or Used PIN');
+            else if (mode === 'school_reg') {
+                if (!form.pin) throw new Error("Pin Required");
+                
+                // 1. Check PIN
+                const { data: pinData } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
+                if (!pinData) throw new Error('Invalid or Used PIN');
 
-                    const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
-                    if(authError) throw authError;
-                    if(!authData.user) throw new Error("Signup failed. Check console.");
+                // 2. Sign Up
+                const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
+                if(authError) throw authError;
+                if(!authData.user) throw new Error("Signup failed. Check console.");
 
-                    // Create School
-                    const { data: school, error: schoolError } = await supabase.from('schools').insert({
-                        owner_id: authData.user.id, 
-                        name: 'My School', 
-                        max_students: pinData.student_limit
-                    }).select().single();
+                // 3. Create School
+                const { data: school, error: schoolError } = await supabase.from('schools').insert({
+                    owner_id: authData.user.id, 
+                    name: 'My School', 
+                    max_students: pinData.student_limit
+                }).select().single();
 
-                    // Check for RLS/Email Confirmation issues
-                    if (schoolError || !school) {
-                        console.error(schoolError);
-                        throw new Error("Failed to create school. Please disable 'Confirm Email' in Supabase Auth settings and try again.");
-                    }
+                if (schoolError || !school) throw new Error("Failed to create school. Disable Email Confirm in Supabase.");
 
-                    await supabase.from('profiles').insert({ id: authData.user.id, full_name: form.name, role: 'admin', school_id: school.id });
-                    await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
-                    
-                    window.alert("School Created! Login now."); 
-                    setMode('login');
-                } 
-                else {
-                     const { data: sch } = await supabase.from('schools').select('id').eq('id', form.schoolCode).single();
-                     if (!sch) throw new Error('Invalid School Code');
-                     
-                     const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
-                     if(authError) throw authError;
+                // 4. Create Profile & Update PIN
+                await supabase.from('profiles').insert({ id: authData.user.id, full_name: form.name, role: 'admin', school_id: school.id });
+                await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
+                
+                // 5. Auto-Login (Session handled by App)
+                window.alert("School Created! Welcome.");
+            } 
+            else if (mode === 'teacher_reg') {
+                if (!form.schoolCode) throw new Error("School Code Required");
+                 
+                 const { data: sch } = await supabase.from('schools').select('id').eq('id', form.schoolCode).single();
+                 if (!sch) throw new Error('Invalid School Code');
+                 
+                 const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
+                 if(authError) throw authError;
 
-                     await supabase.from('profiles').insert({ id: authData.user.id, full_name: form.name, role: 'teacher', school_id: sch.id });
-                     
-                     window.alert("Teacher Registered! Login now."); 
-                     setMode('login');
-                }
+                 await supabase.from('profiles').insert({ id: authData.user.id, full_name: form.name, role: 'teacher', school_id: sch.id });
+                 
+                 window.alert("Teacher Registered! Welcome.");
             } 
             else {
+                // Login
                 const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
                 if (error) throw error;
             }
@@ -948,29 +966,44 @@ const Auth = ({ onLogin, onParent }) => {
                     <School className="mx-auto text-blue-600 mb-2" size={48} />
                     <h1 className="text-2xl font-bold">Springforth Results</h1>
                 </div>
-                <div className="flex justify-center gap-6 mb-6 text-sm font-bold border-b pb-2">
-                    {['login', 'register', 'central'].map(m => (
-                        <button key={m} onClick={()=>setMode(m)} className={`capitalize ${mode===m ? 'text-blue-600' : 'text-gray-400'}`}>{m}</button>
-                    ))}
+                
+                {/* NEW: Explicit Tabs for Registration Types */}
+                <div className="flex justify-center gap-4 mb-6 text-sm font-bold border-b pb-2">
+                    <button onClick={()=>setMode('login')} className={`pb-1 ${mode==='login' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-400'}`}>Login</button>
+                    <button onClick={()=>setMode('school_reg')} className={`pb-1 ${mode==='school_reg' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-400'}`}>Register School</button>
+                    <button onClick={()=>setMode('teacher_reg')} className={`pb-1 ${mode==='teacher_reg' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-400'}`}>Register Teacher</button>
+                    <button onClick={()=>setMode('central')} className={`pb-1 ${mode==='central' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-400'}`}>Central</button>
                 </div>
+
                 <form onSubmit={handleAuth} className="space-y-4">
-                    {mode === 'register' && <input placeholder="Full Name" className="w-full p-3 border rounded" required onChange={e=>setForm({...form, name:e.target.value})} />}
+                    {/* Full Name for Registration Only */}
+                    {(mode === 'school_reg' || mode === 'teacher_reg') && (
+                        <input placeholder="Full Name" className="w-full p-3 border rounded" required onChange={e=>setForm({...form, name:e.target.value})} />
+                    )}
+
                     <input placeholder={mode==='central'?'Username':'Email'} className="w-full p-3 border rounded" required onChange={e=>setForm({...form, email:e.target.value})} />
                     <input type="password" placeholder="Password" className="w-full p-3 border rounded" required onChange={e=>setForm({...form, password:e.target.value})} />
                     
-                    {mode === 'register' && (
-                        <div className="pt-2 border-t mt-2">
-                            <p className="text-xs text-gray-500 mb-2 text-center">Fill ONLY one below</p>
-                            <input placeholder="Subscription PIN (For School Owners)" className="w-full p-2 border border-orange-200 bg-orange-50 rounded mb-2 text-sm" onChange={e=>setForm({...form, pin:e.target.value, schoolCode: ''})} />
-                            <div className="text-center text-xs text-gray-400">- OR -</div>
-                            <input placeholder="School ID Code (For Teachers)" className="w-full p-2 border border-blue-200 bg-blue-50 rounded mt-2 text-sm" onChange={e=>setForm({...form, schoolCode:e.target.value, pin: ''})} />
+                    {/* Specific Fields per Mode */}
+                    {mode === 'school_reg' && (
+                        <div className="pt-2">
+                            <label className="text-xs font-bold text-gray-500">Subscription PIN</label>
+                            <input placeholder="Enter PIN from Admin" className="w-full p-3 border border-orange-200 bg-orange-50 rounded" required onChange={e=>setForm({...form, pin:e.target.value})} />
                         </div>
                     )}
 
-                    <button disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded font-bold hover:bg-blue-700">
-                        {loading ? <Loader2 className="animate-spin mx-auto"/> : mode === 'register' ? 'Create Account' : 'Login'}
+                    {mode === 'teacher_reg' && (
+                        <div className="pt-2">
+                            <label className="text-xs font-bold text-gray-500">School Code</label>
+                            <input placeholder="Enter Code from School Owner" className="w-full p-3 border border-blue-200 bg-blue-50 rounded" required onChange={e=>setForm({...form, schoolCode:e.target.value})} />
+                        </div>
+                    )}
+
+                    <button disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded font-bold hover:bg-blue-700 mt-4">
+                        {loading ? <Loader2 className="animate-spin mx-auto"/> : mode === 'login' ? 'Login' : 'Create Account'}
                     </button>
                 </form>
+
                 {mode === 'login' && <button onClick={onParent} className="w-full mt-4 bg-green-600 text-white py-3 rounded font-bold">Parent Portal</button>}
             </div>
         </div>
