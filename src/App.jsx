@@ -10,7 +10,7 @@ import {
 
 // ==================== SUPABASE CONFIG ====================
 const supabaseUrl = 'https://xtciiatfetqecsfxoicq.supabase.co'; 
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0Y2lpYXRmZXRxZWNzZnhvaWNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwNDEyMDIsImV4cCI6MjA4MDYxNzIwMn0.81K9w-XbCHWRWmKkq3rcJHxslx3hs5mGCSNIvyJRMuw'; 
+const supabaseKey = 'PASTE_YOUR_NEW_ANON_KEY_HERE'; 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==================== CONSTANTS & HELPERS ====================
@@ -72,7 +72,6 @@ const pdfStyles = StyleSheet.create({
   cellCenter: { alignItems: 'center', justifyContent: 'center' },
   colSN: { width: '5%' }, 
   colSubject: { width: '25%' }, 
-  // Dynamic Score Columns handle the rest width
   colTotal: { width: '10%', fontWeight: 'bold' }, 
   colGrade: { width: '10%' },
   colRemark: { width: '15%', borderRight: 0 },
@@ -84,24 +83,20 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
   const isMidTerm = reportType === 'mid';
   const config = school.assessment_config || [];
   
-  // Filter config for MidTerm (Assuming 'exam' code is usually the final exam)
   const displayFields = isMidTerm 
     ? config.filter(f => f.code.toLowerCase() !== 'exam') 
     : config;
 
   const scoreColWidth = `${35 / (displayFields.length || 1)}%`;
 
-  // Process Results
   const processedResults = results.map(r => {
     const rawScores = r.scores || {};
     let total = 0;
     
-    // Sum only displayed fields
     displayFields.forEach(f => {
       total += (parseFloat(rawScores[f.code]) || 0);
     });
 
-    // If MidTerm, we might want to scale grade? Let's just use raw for now.
     const { grade, remark } = calculateGrade(total);
     return { ...r, scores: rawScores, total, grade, remark };
   });
@@ -113,7 +108,6 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
   return (
     <Document>
       <Page size="A4" style={pdfStyles.page}>
-        {/* WATERMARK */}
         {school?.logo_url && <PDFImage src={school.logo_url} style={pdfStyles.watermark} />}
 
         <View style={pdfStyles.headerBox}>
@@ -257,7 +251,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         }
     }
     await supabase.from('schools').update({ ...updates, logo_url }).eq('id', school.id);
-    alert('Updated!');
+    window.alert('Updated!');
     fetchSchoolData();
   };
 
@@ -280,13 +274,19 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     e.preventDefault();
     const form = new FormData(e.target);
     const data = Object.fromEntries(form.entries());
-    if (students.length >= school.max_students) return alert("Limit reached!");
+    if (students.length >= school.max_students) return window.alert("Limit reached!");
     const pin = generatePIN();
     const { error } = await supabase.from('students').insert({
       school_id: school.id, name: data.name, admission_no: data.admission_no,
       gender: data.gender, class_id: data.class_id, parent_pin: pin
     });
-    if (error) alert(error.message); else { alert(`Added! PIN: ${pin}`); e.target.reset(); fetchSchoolData(); }
+    if (error) window.alert(error.message); else { window.alert(`Added! PIN: ${pin}`); e.target.reset(); fetchSchoolData(); }
+  };
+
+  const deleteStudent = async (id) => {
+    if (!window.confirm("Delete student? This is irreversible.")) return;
+    await supabase.from('students').delete().eq('id', id);
+    fetchSchoolData();
   };
 
   const addClass = async (e) => {
@@ -294,6 +294,12 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     const form = new FormData(e.target);
     await supabase.from('classes').insert({ school_id: school.id, name: form.get('name'), form_tutor_id: form.get('form_tutor_id') || null });
     e.target.reset();
+    fetchSchoolData();
+  };
+
+  const deleteClass = async (id) => {
+    if(!window.confirm("Delete Class?")) return;
+    await supabase.from('classes').delete().eq('id', id);
     fetchSchoolData();
   };
 
@@ -309,7 +315,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
 
   const approveResult = async (studentId) => {
       await supabase.from('comments').update({ submission_status: 'approved' }).eq('student_id', studentId);
-      alert("Result Approved! Parents can now check.");
+      window.alert("Result Approved! Parents can now check.");
       fetchSchoolData();
   };
 
@@ -455,7 +461,12 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                     <select name="form_tutor_id" className="border p-2 rounded flex-1"><option value="">Select Tutor</option>{teachers.map(t=><option key={t.id} value={t.id}>{t.full_name}</option>)}</select>
                     <button className="bg-blue-600 text-white px-4 py-2 rounded">Create</button>
                 </form>
-                <div className="grid grid-cols-2 gap-4">{classes.map(c => (<div key={c.id} className="border p-3 rounded"><b>{c.name}</b><br/><span className="text-sm text-gray-500">{c.profiles?.full_name}</span></div>))}</div>
+                <div className="grid grid-cols-2 gap-4">{classes.map(c => (
+                    <div key={c.id} className="border p-3 rounded flex justify-between">
+                        <div><b>{c.name}</b><br/><span className="text-sm text-gray-500">{c.profiles?.full_name}</span></div>
+                        <button onClick={() => deleteClass(c.id)} className="text-red-500"><Trash2 size={16}/></button>
+                    </div>))}
+                </div>
             </div>
         )}
       </div>
@@ -474,6 +485,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [behaviors, setBehaviors] = useState({});
   const [comment, setComment] = useState("");
   const [showPreview, setShowPreview] = useState(false);
+  const [reportType, setReportType] = useState('full');
   const [previewData, setPreviewData] = useState(null);
   const [schoolConfig, setSchoolConfig] = useState([]);
   const [schoolData, setSchoolData] = useState(null);
@@ -517,6 +529,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
   const loadStudentData = async (student) => {
     setSelectedStudent(null);
+    
     const { data: res } = await supabase.from('results').select('*').eq('student_id', student.id);
     const scoreMap = {};
     subjects.forEach(s => {
@@ -577,7 +590,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const publishResult = async () => {
     if(!window.confirm("Publish result for Admin Approval?")) return;
     await saveResultToDB('awaiting_approval');
-    alert("Sent for Approval!");
+    window.alert("Sent for Approval!");
     setShowPreview(false);
   }
 
@@ -709,23 +722,24 @@ const Auth = ({ onLogin, onParent }) => {
                 const { data: school } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: 'My School', max_students: pinData.student_limit }).select().single();
                 await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: school.id });
                 await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
-                alert("Registered!"); setMode('login');
+                window.alert("Registered!"); setMode('login');
             } else if (mode === 'teacher_reg') {
                  const { data: sch } = await supabase.from('schools').select('id').eq('id', form.schoolCode).single();
                  if (!sch) throw new Error('Invalid Code');
                  const { data: auth } = await supabase.auth.signUp({ email: form.email, password: form.password });
                  await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'teacher', school_id: sch.id });
-                 alert("Registered!"); setMode('login');
+                 window.alert("Registered!"); setMode('login');
             } else {
                 const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
                 if (error) throw error;
             }
-        } catch (err) { alert(err.message); }
+        } catch (err) { window.alert(err.message); }
     };
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50">
             <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-md">
+                <div className="text-center mb-6"><School className="mx-auto text-blue-600 mb-2" size={48} /><h1 className="text-2xl font-bold">Springforth Results</h1></div>
                 <div className="flex justify-center gap-4 mb-6 text-sm font-bold border-b pb-2">
                     {['login', 'school_reg', 'teacher_reg', 'central'].map(m => <button key={m} onClick={()=>setMode(m)} className={`capitalize ${mode===m?'text-blue-600':''}`}>{m.replace('_', ' ')}</button>)}
                 </div>
@@ -751,10 +765,10 @@ const ParentPortal = ({ onBack }) => {
     const fetchResult = async (e) => {
         e.preventDefault();
         const { data: stu } = await supabase.from('students').select('*, schools(*), classes(*), comments(*), results(*, subjects(*))').eq('admission_no', creds.adm).eq('parent_pin', creds.pin).maybeSingle();
-        if (!stu) return alert('Invalid Credentials');
+        if (!stu) return window.alert('Invalid Credentials');
         
         const comm = Array.isArray(stu.comments) ? stu.comments[0] : stu.comments;
-        if (comm?.submission_status !== 'approved') return alert("Result not yet approved.");
+        if (comm?.submission_status !== 'approved') return window.alert("Result not yet approved.");
 
         const behaviors = comm?.behaviors ? JSON.parse(comm.behaviors) : {};
         const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviors[trait] || 'Good' }));
