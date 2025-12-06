@@ -5,7 +5,7 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, Copy, Check, User, Download,
-  X, Eye, Settings, Users, BookOpen, FileText, Trash2, ClipboardCopy, FileBarChart, Globe
+  X, Eye, Settings, Users, BookOpen, FileText, Trash2, ClipboardCopy, FileBarChart, Globe, Key
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -89,15 +89,27 @@ const pdfStyles = StyleSheet.create({
 const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = [], reportType = 'full' }) => {
   const isMidTerm = reportType === 'mid';
   
+  // Calculate Totals inside PDF generation to ensure consistency
   const processedResults = results.map(r => {
     let total = 0;
+    const n = r.score_note||0;
+    const c = r.score_cw||0;
+    const h = r.score_hw||0;
+    const t = r.score_test||0;
+    const ca = r.score_ca||0;
+    const ex = r.score_exam||0;
+
     if (isMidTerm) {
-      total = (r.score_note||0) + (r.score_cw||0) + (r.score_hw||0) + (r.score_test||0) + (r.score_ca||0);
+      total = n + c + h + t + ca;
     } else {
-      total = (r.score_note||0) + (r.score_cw||0) + (r.score_hw||0) + (r.score_test||0) + (r.score_ca||0) + (r.score_exam||0);
+      total = n + c + h + t + ca + ex;
     }
-    // Simple scaling for Mid-Term grade if needed, or raw logic
-    const { grade, remark } = calculateGrade(isMidTerm ? (total / 40) * 100 : total);
+    
+    // Scale Grade for Midterm (Total 40) or use raw score? 
+    // Usually grades are based on percentage.
+    const percentage = isMidTerm ? (total / 40) * 100 : total;
+    const { grade, remark } = calculateGrade(percentage);
+    
     return { ...r, total, grade, remark };
   });
 
@@ -213,12 +225,10 @@ const SchoolAdmin = ({ profile, onLogout }) => {
   const [school, setSchool] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Data States
   const [students, setStudents] = useState([]);
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
   
-  // Viewing Results
   const [viewingStudent, setViewingStudent] = useState(null);
   const [reportType, setReportType] = useState('full');
   const [previewData, setPreviewData] = useState(null);
@@ -236,7 +246,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       const { data: cls } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', s.id);
       setClasses(cls || []);
 
-      // Fetch students and check 'submission_status' in comments
       const { data: stu } = await supabase.from('students')
         .select('*, classes(name), comments(submission_status)')
         .eq('school_id', s.id)
@@ -314,18 +323,23 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       setReportType(type);
 
       const { data: results } = await supabase.from('results').select('*, subjects(*)').eq('student_id', student.id);
-      // FIX: Use maybeSingle() to handle cases where no comment/result exists yet
       const { data: comments } = await supabase.from('comments').select('*').eq('student_id', student.id).maybeSingle();
       
-      const behaviorList = comments?.behaviors ? JSON.parse(comments.behaviors) : [];
+      const behaviorList = comments?.behaviors ? JSON.parse(comments.behaviors) : {};
+      
+      // Fix: Ensure we map traits correctly whether stored as Array or Object
+      const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({
+          trait,
+          rating: behaviorList[trait] || 'Good' // Handle if stored as Object
+      }));
 
       setPreviewData({
           school,
           student,
           classInfo: student.classes,
-          results: results || [], // Handle empty results safely
-          comments: comments || {}, // Handle missing comments safely
-          behaviors: behaviorList.map(t => ({ trait: t, rating: 'Good' }))
+          results: results || [],
+          comments: comments || {},
+          behaviors: behaviorArray
       });
   };
 
@@ -333,6 +347,12 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       if(!window.confirm("Delete student? This is irreversible.")) return;
       await supabase.from('students').delete().eq('id', id);
       fetchSchoolData();
+  };
+
+  const getStatus = (s) => {
+      if (Array.isArray(s.comments) && s.comments.length > 0) return s.comments[0].submission_status;
+      if (s.comments && !Array.isArray(s.comments)) return s.comments.submission_status;
+      return null;
   };
 
   if (viewingStudent && previewData) {
@@ -349,13 +369,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
           </div>
       )
   }
-
-  // Helper to extract status from array or object
-  const getStatus = (s) => {
-      if (Array.isArray(s.comments) && s.comments.length > 0) return s.comments[0].submission_status;
-      if (s.comments && !Array.isArray(s.comments)) return s.comments.submission_status;
-      return null;
-  };
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
@@ -374,7 +387,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         {activeTab === 'dashboard' && (
            <div>
                <h1 className="text-2xl font-bold mb-6">Welcome, {school?.name}</h1>
-               
                {school && (
                    <div className="bg-blue-600 text-white p-6 rounded-lg shadow-lg mb-6 flex flex-col md:flex-row justify-between items-center">
                        <div>
@@ -383,29 +395,14 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                        </div>
                        <div className="flex items-center gap-2 mt-4 md:mt-0 bg-blue-800 p-3 rounded-lg">
                            <code className="text-xl font-mono font-bold tracking-wider">{school.id}</code>
-                           <button 
-                               onClick={() => { navigator.clipboard.writeText(school.id); window.alert('Code Copied!'); }}
-                               className="hover:text-blue-200 ml-2" title="Copy Code"
-                           >
-                               <ClipboardCopy size={20} />
-                           </button>
+                           <button onClick={() => { navigator.clipboard.writeText(school.id); window.alert('Code Copied!'); }} className="hover:text-blue-200 ml-2"><ClipboardCopy size={20} /></button>
                        </div>
                    </div>
                )}
-
                <div className="grid grid-cols-3 gap-6">
-                   <div className="bg-white p-6 rounded shadow">
-                       <h3 className="text-gray-500 text-sm">Total Students</h3>
-                       <p className="text-3xl font-bold">{students.length} / {school?.max_students}</p>
-                   </div>
-                   <div className="bg-white p-6 rounded shadow">
-                       <h3 className="text-gray-500 text-sm">Teachers</h3>
-                       <p className="text-3xl font-bold">{teachers.length}</p>
-                   </div>
-                   <div className="bg-white p-6 rounded shadow">
-                       <h3 className="text-gray-500 text-sm">Classes</h3>
-                       <p className="text-3xl font-bold">{classes.length}</p>
-                   </div>
+                   <div className="bg-white p-6 rounded shadow"><h3 className="text-gray-500 text-sm">Total Students</h3><p className="text-3xl font-bold">{students.length} / {school?.max_students}</p></div>
+                   <div className="bg-white p-6 rounded shadow"><h3 className="text-gray-500 text-sm">Teachers</h3><p className="text-3xl font-bold">{teachers.length}</p></div>
+                   <div className="bg-white p-6 rounded shadow"><h3 className="text-gray-500 text-sm">Classes</h3><p className="text-3xl font-bold">{classes.length}</p></div>
                </div>
            </div>
         )}
@@ -414,26 +411,15 @@ const SchoolAdmin = ({ profile, onLogout }) => {
             <div className="bg-white p-6 rounded shadow max-w-2xl">
                 <h2 className="text-xl font-bold mb-4">Edit School Information</h2>
                 <form onSubmit={updateSchool} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-bold">School Name</label>
-                        <input name="name" defaultValue={school?.name} className="w-full p-2 border rounded" required />
-                    </div>
+                    <div><label className="block text-sm font-bold">School Name</label><input name="name" defaultValue={school?.name} className="w-full p-2 border rounded" required /></div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div><label className="block text-sm font-bold">Current Term</label>
-                        <select name="current_term" defaultValue={school?.current_term} className="w-full p-2 border rounded">
-                            <option>Term One</option><option>Term Two</option><option>Term Three</option>
-                        </select></div>
-                        <div><label className="block text-sm font-bold">Session</label>
-                        <input name="current_session" defaultValue={school?.current_session} className="w-full p-2 border rounded" placeholder="2024/2025" /></div>
+                        <div><label className="block text-sm font-bold">Current Term</label><select name="current_term" defaultValue={school?.current_term} className="w-full p-2 border rounded"><option>Term One</option><option>Term Two</option><option>Term Three</option></select></div>
+                        <div><label className="block text-sm font-bold">Session</label><input name="current_session" defaultValue={school?.current_session} className="w-full p-2 border rounded" placeholder="2024/2025" /></div>
                     </div>
                     <div><label className="block text-sm font-bold">Address</label><input name="address" defaultValue={school?.address} className="w-full p-2 border rounded" /></div>
                     <div><label className="block text-sm font-bold">Contact Phone</label><input name="contact" defaultValue={school?.contact} className="w-full p-2 border rounded" /></div>
                     <div><label className="block text-sm font-bold">Email</label><input name="email" defaultValue={school?.email} className="w-full p-2 border rounded" /></div>
-                    <div>
-                        <label className="block text-sm font-bold">School Logo</label>
-                        <input type="file" name="logo_file" accept="image/*" className="w-full text-sm" />
-                        {school?.logo_url && <img src={school.logo_url} alt="Logo" className="h-16 mt-2" />}
-                    </div>
+                    <div><label className="block text-sm font-bold">School Logo</label><input type="file" name="logo_file" accept="image/*" className="w-full text-sm" />{school?.logo_url && <img src={school.logo_url} alt="Logo" className="h-16 mt-2" />}</div>
                     <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">Save Changes</button>
                 </form>
             </div>
@@ -462,6 +448,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                 <th className="p-3">Name</th>
                                 <th className="p-3">Adm No</th>
                                 <th className="p-3">Class</th>
+                                <th className="p-3">Parent PIN</th>
                                 <th className="p-3">Status</th>
                                 <th className="p-3">Admin View</th>
                                 <th className="p-3">Action</th>
@@ -475,19 +462,13 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                     <td className="p-3">{s.name}</td>
                                     <td className="p-3">{s.admission_no}</td>
                                     <td className="p-3">{s.classes?.name}</td>
+                                    <td className="p-3 font-mono text-xs"><span className="bg-gray-100 px-1 rounded">{s.parent_pin}</span></td>
                                     <td className="p-3">
-                                        {status === 'published' ? 
-                                         <span className="text-green-600 font-bold text-xs bg-green-50 px-2 py-1 rounded">Published</span> : 
-                                         <span className="text-gray-400 text-xs">Draft</span>
-                                        }
+                                        {status === 'published' ? <span className="text-green-600 font-bold text-xs bg-green-50 px-2 py-1 rounded">Published</span> : <span className="text-gray-400 text-xs">Draft</span>}
                                     </td>
                                     <td className="p-3 flex gap-2">
-                                        <button onClick={() => loadStudentResult(s, 'mid')} className="bg-blue-50 text-blue-600 text-xs px-2 py-1 rounded hover:bg-blue-100">
-                                           Mid-Term
-                                        </button>
-                                        <button onClick={() => loadStudentResult(s, 'full')} className="bg-green-50 text-green-600 text-xs px-2 py-1 rounded hover:bg-green-100">
-                                           Full-Term
-                                        </button>
+                                        <button onClick={() => loadStudentResult(s, 'mid')} className="bg-blue-50 text-blue-600 text-xs px-2 py-1 rounded hover:bg-blue-100">Mid-Term</button>
+                                        <button onClick={() => loadStudentResult(s, 'full')} className="bg-green-50 text-green-600 text-xs px-2 py-1 rounded hover:bg-green-100">Full-Term</button>
                                     </td>
                                     <td className="p-3">
                                         <div className="flex items-center gap-2">
@@ -509,17 +490,8 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                 <h2 className="text-xl font-bold mb-4">Classes & Teachers</h2>
                 <div className="bg-white p-4 rounded shadow mb-6">
                     <form onSubmit={addClass} className="flex gap-4 items-end">
-                        <div className="flex-1">
-                            <label className="text-xs font-bold">Class Name</label>
-                            <input name="name" placeholder="e.g. JSS 1 A" className="w-full border p-2 rounded" required />
-                        </div>
-                        <div className="flex-1">
-                            <label className="text-xs font-bold">Assign Form Tutor</label>
-                            <select name="form_tutor_id" className="w-full border p-2 rounded">
-                                <option value="">None</option>
-                                {teachers.map(t=><option key={t.id} value={t.id}>{t.full_name}</option>)}
-                            </select>
-                        </div>
+                        <div className="flex-1"><label className="text-xs font-bold">Class Name</label><input name="name" placeholder="e.g. JSS 1 A" className="w-full border p-2 rounded" required /></div>
+                        <div className="flex-1"><label className="text-xs font-bold">Assign Form Tutor</label><select name="form_tutor_id" className="w-full border p-2 rounded"><option value="">None</option>{teachers.map(t=><option key={t.id} value={t.id}>{t.full_name}</option>)}</select></div>
                         <button className="bg-blue-600 text-white px-4 py-2 rounded">Create Class</button>
                     </form>
                 </div>
@@ -527,10 +499,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                     {classes.map(c => (
                         <div key={c.id} className="bg-white p-4 rounded shadow border-l-4 border-blue-600">
                             <div className="flex justify-between items-start">
-                                <div>
-                                    <h3 className="font-bold text-lg">{c.name}</h3>
-                                    <p className="text-sm text-gray-500">Tutor: {c.profiles?.full_name || 'Unassigned'}</p>
-                                </div>
+                                <div><h3 className="font-bold text-lg">{c.name}</h3><p className="text-sm text-gray-500">Tutor: {c.profiles?.full_name || 'Unassigned'}</p></div>
                                 <button className="text-red-400 hover:text-red-600"><Trash2 size={18}/></button>
                             </div>
                         </div>
@@ -551,13 +520,9 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [loadingStudent, setLoadingStudent] = useState(false);
-  
-  // Edit State
   const [scores, setScores] = useState({});
   const [behaviors, setBehaviors] = useState({});
   const [comment, setComment] = useState("");
-  
-  // Preview
   const [showPreview, setShowPreview] = useState(false);
   const [reportType, setReportType] = useState('full');
   const [previewData, setPreviewData] = useState(null);
@@ -604,8 +569,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setSelectedStudent(null);
     setLoadingStudent(true);
     
-    // Fetch Scores
-    const { data: res } = await supabase.from('results').select('*').eq('student_id', student.id);
+    const { data: res } = await supabase.from('results').select('*, subjects(*)').eq('student_id', student.id);
     const scoreMap = {};
     subjects.forEach(s => {
       const existing = res?.find(r => r.subject_id === s.id);
@@ -615,7 +579,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     });
     setScores(scoreMap);
 
-    // Fetch Comments
     const { data: comm } = await supabase.from('comments').select('*').eq('student_id', student.id).maybeSingle();
     setComment(comm?.tutor_comment || "");
     setBehaviors(comm?.behaviors ? JSON.parse(comm.behaviors) : {});
@@ -626,10 +589,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
   const updateScore = (subId, field, value) => {
     const validated = validateScore(value, field.replace('score_', ''));
-    setScores(prev => ({
-      ...prev,
-      [subId]: { ...prev[subId], [field]: validated }
-    }));
+    setScores(prev => ({ ...prev, [subId]: { ...prev[subId], [field]: validated } }));
     save(); 
   };
 
@@ -637,7 +597,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     if(!selectedStudent) return;
     
     const resultsPayload = subjects.map(s => {
-      const sc = scores[s.id];
+      const sc = scores[s.id] || {};
       const total = (sc.score_note||0)+(sc.score_cw||0)+(sc.score_hw||0)+(sc.score_test||0)+(sc.score_ca||0)+(sc.score_exam||0);
       const { grade, remark } = calculateGrade(total);
       return {
@@ -667,9 +627,14 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setReportType(type);
     await saveResultToDB();
     
-    // Fetch latest for preview
     const { data: results } = await supabase.from('results').select('*, subjects(*)').eq('student_id', selectedStudent.id);
     const { data: school } = await supabase.from('schools').select('*').eq('id', curClass.school_id).single();
+
+    // Map behaviors safely from Object to Array for PDF
+    const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({
+        trait,
+        rating: behaviors[trait] || 'Good' 
+    }));
 
     setPreviewData({
         school,
@@ -677,7 +642,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         classInfo: { ...curClass, size: students.length },
         results: results || [],
         comments: { tutor_comment: comment, principal_comment: 'Verified' },
-        behaviors: BEHAVIORAL_TRAITS.map(t => ({ trait: t, rating: behaviors[t] || 'Good' }))
+        behaviors: behaviorArray
     });
     setShowPreview(true);
   };
@@ -701,9 +666,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   <button onClick={() => setShowPreview(false)} className="flex items-center gap-2"><X /> Close</button>
                   <h2 className="font-bold">{previewData.student.name} - {reportType === 'mid' ? 'Mid-Term' : 'Full-Term'}</h2>
                   <div className="flex gap-2">
-                     <button onClick={publishResult} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 mr-4">
-                         <Globe size={18}/> Publish Result
-                     </button>
+                     <button onClick={publishResult} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 mr-4"><Globe size={18}/> Publish Result</button>
                      <PDFDownloadLink document={<ResultPDF {...previewData} reportType={reportType} />} fileName={`${selectedStudent.name}_${reportType}.pdf`}>
                         <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Download /> Download</button>
                      </PDFDownloadLink>
@@ -718,33 +681,19 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     <div className="flex h-screen bg-gray-50">
       <div className="w-80 bg-white border-r flex flex-col">
         <div className="p-4 bg-blue-600 text-white">
-            <div className="flex justify-between items-center">
-                <h2 className="font-bold truncate">{profile.full_name}</h2>
-                <button onClick={onLogout}><LogOut size={16}/></button>
-            </div>
+            <div className="flex justify-between items-center"><h2 className="font-bold truncate">{profile.full_name}</h2><button onClick={onLogout}><LogOut size={16}/></button></div>
             <select className="mt-4 w-full text-black p-2 rounded" onChange={(e) => loadClass(parseInt(e.target.value))}>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
         </div>
-        
         <div className="flex-1 overflow-y-auto">
             {curClass && (
                 <>
-                <div className="p-3 bg-gray-100 font-bold text-xs flex justify-between items-center">
-                    <span>SUBJECTS ({subjects.length})</span>
-                    <button onClick={addSubject} className="text-blue-600"><Plus size={16}/></button>
-                </div>
-                <div className="p-2 flex flex-wrap gap-2 border-b">
-                    {subjects.map(s => (
-                        <span key={s.id} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded flex items-center gap-1">
-                            {s.name} <button onClick={()=>deleteSubject(s.id)} className="text-red-500 hover:text-red-700">×</button>
-                        </span>
-                    ))}
-                </div>
+                <div className="p-3 bg-gray-100 font-bold text-xs flex justify-between items-center"><span>SUBJECTS ({subjects.length})</span><button onClick={addSubject} className="text-blue-600"><Plus size={16}/></button></div>
+                <div className="p-2 flex flex-wrap gap-2 border-b">{subjects.map(s => (<span key={s.id} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded flex items-center gap-1">{s.name} <button onClick={()=>deleteSubject(s.id)} className="text-red-500 hover:text-red-700">×</button></span>))}</div>
                 <div className="p-3 bg-gray-100 font-bold text-xs">STUDENTS ({students.length})</div>
                 {students.map(s => (
-                    <div key={s.id} onClick={() => loadStudentData(s)}
-                        className={`p-4 border-b cursor-pointer hover:bg-gray-50 ${selectedStudent?.id === s.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''}`}>
+                    <div key={s.id} onClick={() => loadStudentData(s)} className={`p-4 border-b cursor-pointer hover:bg-gray-50 ${selectedStudent?.id === s.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''}`}>
                         <p className="font-medium">{s.name}</p>
                         <p className="text-xs text-gray-500">{s.admission_no}</p>
                     </div>
@@ -763,21 +712,11 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         ) : (
             <div className="p-8 pb-20">
                 <div className="flex justify-between items-center mb-6">
-                    <div>
-                        <h1 className="text-2xl font-bold">{selectedStudent.name}</h1>
-                        <p className="text-gray-500">{selectedStudent.admission_no} • {curClass.name}</p>
-                    </div>
+                    <div><h1 className="text-2xl font-bold">{selectedStudent.name}</h1><p className="text-gray-500">{selectedStudent.admission_no} • {curClass.name}</p></div>
                     <div className="flex items-center gap-2">
-                        <div className="text-right text-xs text-gray-500 mr-4">
-                             {saving ? <span className="flex items-center text-orange-500"><Loader2 className="animate-spin mr-1" size={12}/> Saving...</span> : 
-                              lastSaved ? <span className="flex items-center text-green-600"><Check size={12} className="mr-1"/> Saved {lastSaved.toLocaleTimeString()}</span> : null}
-                        </div>
-                        <button onClick={() => handlePreview('mid')} className="bg-blue-100 text-blue-700 px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-200">
-                            <FileBarChart size={18}/> Mid-Term
-                        </button>
-                        <button onClick={() => handlePreview('full')} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 shadow hover:bg-blue-700">
-                            <Eye size={18}/> Full-Term
-                        </button>
+                        <div className="text-right text-xs text-gray-500 mr-4">{saving ? <span className="flex items-center text-orange-500"><Loader2 className="animate-spin mr-1" size={12}/> Saving...</span> : lastSaved ? <span className="flex items-center text-green-600"><Check size={12} className="mr-1"/> Saved {lastSaved.toLocaleTimeString()}</span> : null}</div>
+                        <button onClick={() => handlePreview('mid')} className="bg-blue-100 text-blue-700 px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-200"><FileBarChart size={18}/> Mid-Term</button>
+                        <button onClick={() => handlePreview('full')} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 shadow hover:bg-blue-700"><Eye size={18}/> Full-Term</button>
                     </div>
                 </div>
 
@@ -786,9 +725,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                         <thead className="bg-gray-50 border-b">
                             <tr>
                                 <th className="p-3 text-left w-1/4">Subject</th>
-                                {['note','cw','hw','test','ca','exam'].map(f => (
-                                    <th key={f} className="p-2 text-center uppercase text-xs text-gray-600">{f}<br/>({SCORE_LIMITS[f]})</th>
-                                ))}
+                                {['note','cw','hw','test','ca','exam'].map(f => (<th key={f} className="p-2 text-center uppercase text-xs text-gray-600">{f}<br/>({SCORE_LIMITS[f]})</th>))}
                                 <th className="p-3 text-center w-20">Total</th>
                                 <th className="p-3 text-center">Grade</th>
                             </tr>
@@ -797,27 +734,17 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                             {subjects.map(s => {
                                 const sc = scores[s.id] || {};
                                 const total = ['note','cw','hw','test','ca','exam'].reduce((a,k) => a + (sc[`score_${k}`]||0), 0);
-                                const { grade, remark } = calculateGrade(total);
+                                const { grade } = calculateGrade(total);
                                 return (
                                     <tr key={s.id} className="border-b hover:bg-gray-50">
                                         <td className="p-3 font-medium text-gray-700">{s.name}</td>
                                         {['note','cw','hw','test','ca','exam'].map(f => (
                                             <td key={f} className="p-2 text-center">
-                                                <input 
-                                                    type="number" 
-                                                    className={`w-14 text-center border rounded p-1`}
-                                                    value={sc[`score_${f}`] === 0 ? '' : sc[`score_${f}`]}
-                                                    placeholder="0"
-                                                    onChange={(e) => updateScore(s.id, `score_${f}`, e.target.value)}
-                                                />
+                                                <input type="number" className={`w-14 text-center border rounded p-1`} value={sc[`score_${f}`] === 0 ? '' : sc[`score_${f}`]} placeholder="0" onChange={(e) => updateScore(s.id, `score_${f}`, e.target.value)} />
                                             </td>
                                         ))}
                                         <td className="p-3 text-center font-bold text-blue-600">{total}</td>
-                                        <td className="p-3 text-center">
-                                            <span className={`px-2 py-1 rounded text-xs font-bold ${grade.startsWith('A')?'bg-green-100 text-green-800':grade==='F'?'bg-red-100 text-red-800':'bg-gray-100'}`}>
-                                                {grade}
-                                            </span>
-                                        </td>
+                                        <td className="p-3 text-center"><span className={`px-2 py-1 rounded text-xs font-bold ${grade.startsWith('A')?'bg-green-100 text-green-800':grade==='F'?'bg-red-100 text-red-800':'bg-gray-100'}`}>{grade}</span></td>
                                     </tr>
                                 );
                             })}
@@ -832,32 +759,16 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                             {BEHAVIORAL_TRAITS.map(t => (
                                 <div key={t}>
                                     <label className="text-xs font-bold text-gray-500 block mb-1">{t}</label>
-                                    <select 
-                                        className="w-full border rounded p-1.5 text-sm"
-                                        value={behaviors[t] || 'Good'}
-                                        onChange={(e) => {
-                                            setBehaviors(p => ({...p, [t]: e.target.value}));
-                                            save();
-                                        }}
-                                    >
+                                    <select className="w-full border rounded p-1.5 text-sm" value={behaviors[t] || 'Good'} onChange={(e) => { setBehaviors(p => ({...p, [t]: e.target.value})); save(); }}>
                                         {RATINGS.map(r => <option key={r}>{r}</option>)}
                                     </select>
                                 </div>
                             ))}
                         </div>
                     </div>
-
                     <div className="bg-white p-6 rounded-lg shadow h-fit">
                         <h3 className="font-bold mb-4 flex items-center gap-2"><FileText size={18}/> Tutor's Comment</h3>
-                        <textarea 
-                            className="w-full border rounded p-3 h-32 text-sm"
-                            placeholder="Enter a comprehensive remark about the student's performance..."
-                            value={comment}
-                            onChange={(e) => {
-                                setComment(e.target.value);
-                                save();
-                            }}
-                        />
+                        <textarea className="w-full border rounded p-3 h-32 text-sm" placeholder="Enter a comprehensive remark..." value={comment} onChange={(e) => { setComment(e.target.value); save(); }} />
                     </div>
                 </div>
             </div>
@@ -869,7 +780,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
 // 3. AUTH & PARENT PORTAL
 const Auth = ({ onLogin, onParent }) => {
-    const [mode, setMode] = useState('login'); // 'login', 'school_reg', 'teacher_reg', 'central'
+    const [mode, setMode] = useState('login'); 
     const [loading, setLoading] = useState(false);
     const [form, setForm] = useState({ email: '', password: '', name: '', pin: '', schoolCode: '' });
 
@@ -883,99 +794,51 @@ const Auth = ({ onLogin, onParent }) => {
             } 
             else if (mode === 'school_reg') {
                 if (!form.pin) throw new Error("Pin Required");
-                
-                // 1. Check PIN
                 const { data: pinData } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
                 if (!pinData) throw new Error('Invalid or Used PIN');
-
-                // 2. Sign Up
                 const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
                 if(authError) throw authError;
-                if(!authData.user) throw new Error("Signup failed. Check console.");
-
-                // 3. Create School
-                const { data: school, error: schoolError } = await supabase.from('schools').insert({
-                    owner_id: authData.user.id, 
-                    name: 'My School', 
-                    max_students: pinData.student_limit
-                }).select().single();
-
-                if (schoolError || !school) throw new Error("Failed to create school. Disable Email Confirm in Supabase.");
-
-                // 4. Create Profile & Update PIN
+                const { data: school, error: schoolError } = await supabase.from('schools').insert({ owner_id: authData.user.id, name: 'My School', max_students: pinData.student_limit }).select().single();
+                if (schoolError || !school) throw new Error("Failed to create school.");
                 await supabase.from('profiles').insert({ id: authData.user.id, full_name: form.name, role: 'admin', school_id: school.id });
                 await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
-                
-                // 5. Auto-Login (Session handled by App)
                 window.alert("School Created! Welcome.");
             } 
             else if (mode === 'teacher_reg') {
                 if (!form.schoolCode) throw new Error("School Code Required");
-                 
                  const { data: sch } = await supabase.from('schools').select('id').eq('id', form.schoolCode).single();
                  if (!sch) throw new Error('Invalid School Code');
-                 
                  const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
                  if(authError) throw authError;
-
                  await supabase.from('profiles').insert({ id: authData.user.id, full_name: form.name, role: 'teacher', school_id: sch.id });
-                 
                  window.alert("Teacher Registered! Welcome.");
             } 
             else {
-                // Login
                 const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
                 if (error) throw error;
             }
-        } catch (err) { 
-            console.error(err);
-            window.alert(err.message); 
-        }
+        } catch (err) { console.error(err); window.alert(err.message); }
         setLoading(false);
     };
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50">
             <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-md">
-                <div className="text-center mb-6">
-                    <School className="mx-auto text-blue-600 mb-2" size={48} />
-                    <h1 className="text-2xl font-bold">Springforth Results</h1>
-                </div>
-                
+                <div className="text-center mb-6"><School className="mx-auto text-blue-600 mb-2" size={48} /><h1 className="text-2xl font-bold">Springforth Results</h1></div>
                 <div className="flex justify-center gap-4 mb-6 text-sm font-bold border-b pb-2">
                     <button onClick={()=>setMode('login')} className={`pb-1 ${mode==='login' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-400'}`}>Login</button>
                     <button onClick={()=>setMode('school_reg')} className={`pb-1 ${mode==='school_reg' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-400'}`}>Register School</button>
                     <button onClick={()=>setMode('teacher_reg')} className={`pb-1 ${mode==='teacher_reg' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-400'}`}>Register Teacher</button>
                     <button onClick={()=>setMode('central')} className={`pb-1 ${mode==='central' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-400'}`}>Central</button>
                 </div>
-
                 <form onSubmit={handleAuth} className="space-y-4">
-                    {(mode === 'school_reg' || mode === 'teacher_reg') && (
-                        <input placeholder="Full Name" className="w-full p-3 border rounded" required onChange={e=>setForm({...form, name:e.target.value})} />
-                    )}
-
+                    {(mode === 'school_reg' || mode === 'teacher_reg') && <input placeholder="Full Name" className="w-full p-3 border rounded" required onChange={e=>setForm({...form, name:e.target.value})} />}
                     <input placeholder={mode==='central'?'Username':'Email'} className="w-full p-3 border rounded" required onChange={e=>setForm({...form, email:e.target.value})} />
                     <input type="password" placeholder="Password" className="w-full p-3 border rounded" required onChange={e=>setForm({...form, password:e.target.value})} />
-                    
-                    {mode === 'school_reg' && (
-                        <div className="pt-2">
-                            <label className="text-xs font-bold text-gray-500">Subscription PIN</label>
-                            <input placeholder="Enter PIN from Admin" className="w-full p-3 border border-orange-200 bg-orange-50 rounded" required onChange={e=>setForm({...form, pin:e.target.value})} />
-                        </div>
-                    )}
-
-                    {mode === 'teacher_reg' && (
-                        <div className="pt-2">
-                            <label className="text-xs font-bold text-gray-500">School Code</label>
-                            <input placeholder="Enter Code from School Owner" className="w-full p-3 border border-blue-200 bg-blue-50 rounded" required onChange={e=>setForm({...form, schoolCode:e.target.value})} />
-                        </div>
-                    )}
-
-                    <button disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded font-bold hover:bg-blue-700 mt-4">
-                        {loading ? <Loader2 className="animate-spin mx-auto"/> : mode === 'login' ? 'Login' : 'Create Account'}
-                    </button>
+                    {mode === 'school_reg' && <div className="pt-2"><label className="text-xs font-bold text-gray-500">Subscription PIN</label><input placeholder="Enter PIN from Admin" className="w-full p-3 border border-orange-200 bg-orange-50 rounded" required onChange={e=>setForm({...form, pin:e.target.value})} /></div>}
+                    {mode === 'teacher_reg' && <div className="pt-2"><label className="text-xs font-bold text-gray-500">School Code</label><input placeholder="Enter Code from School Owner" className="w-full p-3 border border-blue-200 bg-blue-50 rounded" required onChange={e=>setForm({...form, schoolCode:e.target.value})} /></div>}
+                    <button disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded font-bold hover:bg-blue-700 mt-4">{loading ? <Loader2 className="animate-spin mx-auto"/> : mode === 'login' ? 'Login' : 'Create Account'}</button>
                 </form>
-
                 {mode === 'login' && <button onClick={onParent} className="w-full mt-4 bg-green-600 text-white py-3 rounded font-bold">Parent Portal</button>}
             </div>
         </div>
@@ -991,28 +854,26 @@ const ParentPortal = ({ onBack }) => {
         e.preventDefault();
         const { data: stu, error } = await supabase.from('students')
             .select('*, schools(*), classes(*), comments(*), results(*, subjects(*))')
-            .eq('admission_no', creds.adm).eq('parent_pin', creds.pin).single();
+            .eq('admission_no', creds.adm).eq('parent_pin', creds.pin).maybeSingle();
 
         if (error || !stu) return window.alert('Invalid Admission No or PIN');
         
-        // Strict Check: Parents only see published results
-        // Handle cases where comments is an array or object
         const commentData = Array.isArray(stu.comments) ? stu.comments[0] : stu.comments;
         const isPublished = commentData?.submission_status === 'published';
         
         if (!isPublished) return alert("Result not yet published by Class Teacher.");
 
-        const processed = stu.results.map(r => ({
-            ...r,
-            total: (r.score_note||0)+(r.score_cw||0)+(r.score_hw||0)+(r.score_test||0)+(r.score_ca||0)+(r.score_exam||0)
-        }));
-
-        const behaviors = commentData?.behaviors ? JSON.parse(commentData.behaviors) : [];
+        // Fix: Ensure we pass raw results to PDF and let PDF component do the math
+        // We will just pass the structure exactly as Supabase returned it.
+        const behaviors = commentData?.behaviors ? JSON.parse(commentData.behaviors) : {};
+        // Map object to array
+        const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviors[trait] || 'Good' }));
 
         setData({
             student: stu, school: stu.schools, classInfo: stu.classes,
-            results: processed, comments: commentData || {},
-            behaviors: behaviors.map(k => ({ trait: k, rating: 'Good' })) 
+            results: stu.results, // Pass raw results array
+            comments: commentData || {},
+            behaviors: behaviorArray
         });
     };
 
@@ -1023,14 +884,10 @@ const ParentPortal = ({ onBack }) => {
                 <h2 className="font-bold">{data.student.name}</h2>
                 <div className="flex gap-2">
                     <PDFDownloadLink document={<ResultPDF {...data} reportType="mid" />} fileName={`${data.student.name}_MidTerm.pdf`}>
-                        <button className="bg-blue-100 text-blue-700 px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-200">
-                             Download Mid-Term
-                        </button>
+                        <button className="bg-blue-100 text-blue-700 px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-200">Download Mid-Term</button>
                     </PDFDownloadLink>
                     <PDFDownloadLink document={<ResultPDF {...data} reportType="full" />} fileName={`${data.student.name}_FullTerm.pdf`}>
-                        <button className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-green-700">
-                             Download Full Result
-                        </button>
+                        <button className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-green-700">Download Full Result</button>
                     </PDFDownloadLink>
                 </div>
             </div>
