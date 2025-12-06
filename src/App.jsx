@@ -479,7 +479,10 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                 <input name="pin" type="password" placeholder="Parent PIN" className="w-full p-2 border rounded" required />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <select name="gender" className="w-full p-2 border rounded"><option>Male</option><option>Female</option></select>
+                <select name="gender" className="w-full p-2 border rounded">
+                  <option>Male</option>
+                  <option>Female</option>
+                </select>
                 <select name="class_id" className="w-full p-2 border rounded" required>
                   <option value="">Select Class</option>
                   {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
