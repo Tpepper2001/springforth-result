@@ -5,7 +5,7 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, User, Download,
-  X, Eye, Trash2, ShieldCheck, Save, Menu
+  X, Eye, Trash2, ShieldCheck, Save, Menu, Upload
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -20,13 +20,16 @@ const BEHAVIORAL_TRAITS = [
 ];
 const RATINGS = ['Excellent', 'Very Good', 'Good', 'Fair', 'Poor'];
 
-const calculateGrade = (total) => {
-  if (total >= 86) return { grade: 'A*', remark: 'Distinction' };
-  if (total >= 76) return { grade: 'A', remark: 'Excellent' };
-  if (total >= 66) return { grade: 'B', remark: 'Very Good' };
-  if (total >= 60) return { grade: 'C', remark: 'Good' };
-  if (total >= 50) return { grade: 'D', remark: 'Fairly Good' };
-  if (total >= 40) return { grade: 'E', remark: 'Pass' };
+const calculateGrade = (total, maxScore = 100) => {
+  // Normalize score to 100% if it's a CA report (e.g. max is 40)
+  const percentage = (total / maxScore) * 100;
+  
+  if (percentage >= 86) return { grade: 'A*', remark: 'Distinction' };
+  if (percentage >= 76) return { grade: 'A', remark: 'Excellent' };
+  if (percentage >= 66) return { grade: 'B', remark: 'Very Good' };
+  if (percentage >= 60) return { grade: 'C', remark: 'Good' };
+  if (percentage >= 50) return { grade: 'D', remark: 'Fairly Good' };
+  if (percentage >= 40) return { grade: 'E', remark: 'Pass' };
   return { grade: 'F', remark: 'Fail' };
 };
 
@@ -70,123 +73,56 @@ const useAutoSave = (callback, delay = 2000) => {
   return { save: trigger, saving };
 };
 
-// ==================== PDF STYLES (PROFESSIONAL THEME) ====================
+// ==================== PDF STYLES ====================
 const pdfStyles = StyleSheet.create({
-  page: { 
-    padding: 30, 
-    fontFamily: 'Helvetica', 
-    fontSize: 9,
-    color: '#333'
-  },
+  page: { padding: 30, fontFamily: 'Helvetica', fontSize: 9, color: '#333' },
   watermarkContainer: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     justifyContent: 'center', alignItems: 'center', zIndex: -1
   },
   watermarkImage: { width: 400, height: 400, opacity: 0.05 },
-
-  // HEADER
   headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-    borderBottomWidth: 2,
-    borderBottomColor: '#0f172a', // Navy Blue
-    paddingBottom: 10,
+    flexDirection: 'row', alignItems: 'center', marginBottom: 15,
+    borderBottomWidth: 2, borderBottomColor: '#0f172a', paddingBottom: 10,
   },
-  logoBox: {
-    width: 70,
-    height: 70,
-    marginRight: 15,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
+  logoBox: { width: 70, height: 70, marginRight: 15, justifyContent: 'center', alignItems: 'center' },
   logo: { width: '100%', height: '100%', objectFit: 'contain' },
   headerTextBox: { flex: 1 },
-  schoolName: {
-    fontSize: 22,
-    fontFamily: 'Helvetica-Bold',
-    color: '#0f172a',
-    textTransform: 'uppercase',
-    marginBottom: 4
-  },
+  schoolName: { fontSize: 22, fontFamily: 'Helvetica-Bold', color: '#0f172a', textTransform: 'uppercase', marginBottom: 4 },
   schoolAddress: { fontSize: 9, color: '#444', marginBottom: 2 },
   contactRow: { fontSize: 9, color: '#444', fontStyle: 'italic' },
-
-  // TITLE BAR
-  reportTitleBox: {
-    alignItems: 'center',
-    marginBottom: 15,
-    paddingVertical: 6,
-    backgroundColor: '#f1f5f9', 
-    borderRadius: 2
-  },
-  reportTitle: {
-    fontSize: 12,
-    fontFamily: 'Helvetica-Bold',
-    textTransform: 'uppercase',
-    color: '#0f172a'
-  },
-
-  // STUDENT INFO GRID
-  infoContainer: {
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 4
-  },
-  infoRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    padding: 6
-  },
+  reportTitleBox: { alignItems: 'center', marginBottom: 15, paddingVertical: 6, backgroundColor: '#f1f5f9', borderRadius: 2 },
+  reportTitle: { fontSize: 12, fontFamily: 'Helvetica-Bold', textTransform: 'uppercase', color: '#0f172a' },
+  infoContainer: { marginBottom: 15, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 4 },
+  infoRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f1f5f9', padding: 6 },
   infoCol: { flex: 1 },
   infoLabel: { fontSize: 7, color: '#64748b', textTransform: 'uppercase', marginBottom: 2 },
   infoValue: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: '#0f172a' },
-
-  // TABLE
   table: { width: '100%', marginBottom: 15, borderWidth: 1, borderColor: '#e2e8f0' },
-  tableHeader: { 
-    flexDirection: 'row', 
-    backgroundColor: '#0f172a', 
-    paddingVertical: 6,
-    alignItems: 'center'
-  },
+  tableHeader: { flexDirection: 'row', backgroundColor: '#0f172a', paddingVertical: 6, alignItems: 'center' },
   headerText: { color: 'white', fontSize: 8, fontWeight: 'bold' },
-  tableRow: { 
-    flexDirection: 'row', 
-    borderBottomWidth: 1, 
-    borderBottomColor: '#e2e8f0', 
-    minHeight: 22, 
-    alignItems: 'center' 
-  },
+  tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#e2e8f0', minHeight: 22, alignItems: 'center' },
   cell: { padding: 4, fontSize: 9 },
   colSN: { width: '6%', textAlign: 'center' }, 
   colSubject: { width: '30%' }, 
   colTotal: { width: '10%', fontFamily: 'Helvetica-Bold', textAlign: 'center' }, 
   colGrade: { width: '10%', textAlign: 'center' },
   colRemark: { width: '15%', textAlign: 'left', fontSize: 8 },
-
-  // FOOTER
-  footerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 30
-  },
-  signatureBox: {
-    width: '40%',
-    alignItems: 'center',
-    paddingTop: 5,
-    borderTopWidth: 1,
-    borderTopColor: '#94a3b8'
-  },
+  footerContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 30 },
+  signatureBox: { width: '40%', alignItems: 'center', paddingTop: 5, borderTopWidth: 1, borderTopColor: '#94a3b8', height: 60, justifyContent: 'flex-end' },
+  signatureImage: { height: 40, width: 100, objectFit: 'contain', marginBottom: 2 },
   signatureText: { fontSize: 8, color: '#64748b', textTransform: 'uppercase' }
 });
 
-const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = [], reportType = 'full', logoBase64 }) => {
+const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = [], reportType = 'full', logoBase64, principalSigBase64, teacherSigBase64 }) => {
   const isMidTerm = reportType === 'mid';
   const config = school.assessment_config || [];
+  
+  // Mid-Term Calculation: Exclude 'exam' fields
   const displayFields = isMidTerm ? config.filter(f => f.code.toLowerCase() !== 'exam') : config;
+  
+  // Calculate max score for this report type to scale grades correctly
+  const maxPossibleScore = displayFields.reduce((sum, f) => sum + parseInt(f.max), 0);
 
   const fixedWidths = 6 + 30 + 10 + (isMidTerm ? 0 : 10) + 15; 
   const remainingWidth = 100 - fixedWidths;
@@ -196,12 +132,13 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
     const rawScores = r.scores || {};
     let total = 0;
     displayFields.forEach(f => total += (parseFloat(rawScores[f.code]) || 0));
-    const { grade, remark } = calculateGrade(total);
+    const { grade, remark } = calculateGrade(total, maxPossibleScore);
     return { ...r, scores: rawScores, total, grade, remark };
   });
 
   const totalScore = processedResults.reduce((acc, r) => acc + r.total, 0);
-  const average = (totalScore / (results.length || 1)).toFixed(1);
+  // Calculate average based on the max possible score of the specific term type
+  const average = ((totalScore / (results.length * maxPossibleScore)) * 100).toFixed(1);
   const behaviorMap = Object.fromEntries(behaviors.map(b => [b.trait, b.rating]));
 
   return (
@@ -226,7 +163,7 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
         {/* TITLE */}
         <View style={pdfStyles.reportTitleBox}>
             <Text style={pdfStyles.reportTitle}>
-              {isMidTerm ? 'MID-TERM ASSESSMENT' : 'END OF TERM REPORT'} - {school?.current_term?.toUpperCase()}
+              {isMidTerm ? 'MID-TERM CONTINUOUS ASSESSMENT' : 'END OF TERM REPORT'} - {school?.current_term?.toUpperCase()}
             </Text>
             <Text style={{fontSize: 9, color: '#64748b', marginTop: 2}}>{school?.current_session} SESSION</Text>
         </View>
@@ -238,13 +175,11 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
                 <View style={pdfStyles.infoCol}><Text style={pdfStyles.infoLabel}>Admission No</Text><Text style={pdfStyles.infoValue}>{student.admission_no}</Text></View>
                 <View style={pdfStyles.infoCol}><Text style={pdfStyles.infoLabel}>Class</Text><Text style={pdfStyles.infoValue}>{classInfo?.name}</Text></View>
             </View>
-            {!isMidTerm && (
             <View style={[pdfStyles.infoRow, {borderBottomWidth: 0}]}>
                 <View style={pdfStyles.infoCol}><Text style={pdfStyles.infoLabel}>Gender</Text><Text style={pdfStyles.infoValue}>{student.gender}</Text></View>
-                <View style={pdfStyles.infoCol}><Text style={pdfStyles.infoLabel}>Total Obt.</Text><Text style={pdfStyles.infoValue}>{totalScore}</Text></View>
-                <View style={pdfStyles.infoCol}><Text style={pdfStyles.infoLabel}>Average</Text><Text style={pdfStyles.infoValue}>{average}%</Text></View>
+                <View style={pdfStyles.infoCol}><Text style={pdfStyles.infoLabel}>Total Obtained</Text><Text style={pdfStyles.infoValue}>{totalScore} / {results.length * maxPossibleScore}</Text></View>
+                <View style={pdfStyles.infoCol}><Text style={pdfStyles.infoLabel}>Percentage</Text><Text style={pdfStyles.infoValue}>{isNaN(average) ? '0.0' : average}%</Text></View>
             </View>
-            )}
         </View>
 
         {/* TABLE */}
@@ -264,7 +199,7 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
               {displayFields.map(f => <Text key={f.code} style={[pdfStyles.cell, {width: scoreColWidth, textAlign: 'center'}]}>{r.scores[f.code] || 0}</Text>)}
               <Text style={[pdfStyles.cell, pdfStyles.colTotal]}>{r.total}</Text>
               {!isMidTerm && <Text style={[pdfStyles.cell, pdfStyles.colGrade]}>{r.grade}</Text>}
-              <Text style={[pdfStyles.cell, pdfStyles.colRemark]}>{isMidTerm ? (r.total >= (totalScore/(results.length||1))/2 ? 'Pass' : 'Fail') : r.remark}</Text>
+              <Text style={[pdfStyles.cell, pdfStyles.colRemark]}>{isMidTerm ? (r.total >= (maxPossibleScore/2) ? 'Pass' : 'Fail') : r.remark}</Text>
             </View>
           ))}
         </View>
@@ -297,8 +232,14 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
         )}
 
         <View style={pdfStyles.footerContainer}>
-            <View style={pdfStyles.signatureBox}><Text style={pdfStyles.signatureText}>Class Tutor Signature</Text></View>
-            <View style={pdfStyles.signatureBox}><Text style={pdfStyles.signatureText}>Principal Signature</Text></View>
+            <View style={pdfStyles.signatureBox}>
+                {teacherSigBase64 ? <PDFImage src={teacherSigBase64} style={pdfStyles.signatureImage} /> : null}
+                <Text style={pdfStyles.signatureText}>Class Tutor Signature</Text>
+            </View>
+            <View style={pdfStyles.signatureBox}>
+                {principalSigBase64 ? <PDFImage src={principalSigBase64} style={pdfStyles.signatureImage} /> : null}
+                <Text style={pdfStyles.signatureText}>Principal Signature</Text>
+            </View>
         </View>
       </Page>
     </Document>
@@ -327,7 +268,8 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     if (s) {
       const { data: cls } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', s.id);
       setClasses(cls || []);
-      const { data: stu } = await supabase.from('students').select('*, classes(name), comments(submission_status)').eq('school_id', s.id).order('name');
+      // Need to fetch students with class info AND the form tutor's profile to get teacher signature later
+      const { data: stu } = await supabase.from('students').select('*, classes(name, form_tutor_id, profiles(signature_url)), comments(submission_status)').eq('school_id', s.id).order('name');
       setStudents(stu || []);
       const { data: tch } = await supabase.from('profiles').select('*').eq('school_id', s.id).eq('role', 'teacher');
       setTeachers(tch || []);
@@ -339,24 +281,47 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     e.preventDefault();
     setLoading(true);
     const formData = new FormData(e.target);
+    
+    // Upload Logo
     const file = formData.get('logo_file');
     let logo_url = school.logo_url;
-
     if (file && file.size > 0) {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${school.id}-${Date.now()}.${fileExt}`;
+        const fileName = `logo-${school.id}-${Date.now()}.${file.name.split('.').pop()}`;
         const { error } = await supabase.storage.from('school-assets').upload(fileName, file);
         if (!error) {
             const { data } = supabase.storage.from('school-assets').getPublicUrl(fileName);
             logo_url = data.publicUrl;
         }
     }
+
+    // Upload Principal Signature
+    const sigFile = formData.get('sig_file');
+    let principal_signature_url = school.principal_signature_url;
+    if (sigFile && sigFile.size > 0) {
+        const fileName = `sig-${school.id}-${Date.now()}.${sigFile.name.split('.').pop()}`;
+        const { error } = await supabase.storage.from('school-assets').upload(fileName, sigFile);
+        if (!error) {
+            const { data } = supabase.storage.from('school-assets').getPublicUrl(fileName);
+            principal_signature_url = data.publicUrl;
+        }
+    }
     
-    const { logo_file, ...otherUpdates } = Object.fromEntries(formData.entries());
-    const { error } = await supabase.from('schools').update({ ...otherUpdates, logo_url }).eq('id', school.id);
+    // Extract other fields
+    const updates = {
+        name: formData.get('name'),
+        address: formData.get('address'),
+        contact: formData.get('contact'),
+        email: formData.get('email'),
+        current_term: formData.get('current_term'),
+        current_session: formData.get('current_session'),
+        logo_url,
+        principal_signature_url
+    };
+
+    const { error } = await supabase.from('schools').update(updates).eq('id', school.id);
     
     if(!error) {
-        setSchool(prev => ({ ...prev, ...otherUpdates, logo_url }));
+        setSchool(prev => ({ ...prev, ...updates }));
         window.alert('School Info Updated!');
     } else {
         window.alert('Update Failed: ' + error.message);
@@ -397,8 +362,20 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     const { data: comments } = await supabase.from('comments').select('*').eq('student_id', student.id).maybeSingle();
     const behaviorList = comments?.behaviors ? JSON.parse(comments.behaviors) : {};
     const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviorList[trait] || 'Good' }));
+    
+    // Convert Images to Base64 for PDF
     const logoBase64 = await imageUrlToBase64(school.logo_url);
-    setPreviewData({ school, student, classInfo: student.classes, results: results || [], comments: comments || {}, behaviors: behaviorArray, logoBase64 });
+    const principalSigBase64 = await imageUrlToBase64(school.principal_signature_url);
+    
+    // Get Teacher Signature from the student's class profile linkage
+    const teacherUrl = student.classes?.profiles?.signature_url;
+    const teacherSigBase64 = await imageUrlToBase64(teacherUrl);
+
+    setPreviewData({ 
+        school, student, classInfo: student.classes, 
+        results: results || [], comments: comments || {}, behaviors: behaviorArray, 
+        logoBase64, principalSigBase64, teacherSigBase64 
+    });
   };
 
   if (viewingStudent && previewData) {
@@ -407,12 +384,12 @@ const SchoolAdmin = ({ profile, onLogout }) => {
             <div className="bg-white p-4 shadow flex justify-between items-center z-10">
                 <button onClick={() => setViewingStudent(null)} className="flex items-center gap-2"><X /> Close</button>
                 <div className="flex gap-3">
-                    <PDFDownloadLink document={<ResultPDF {...previewData} reportType={reportType} logoBase64={previewData.logoBase64} />} fileName={`${viewingStudent.name}.pdf`}>
+                    <PDFDownloadLink document={<ResultPDF {...previewData} reportType={reportType} logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName={`${viewingStudent.name}.pdf`}>
                       <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Download size={18} /> Download PDF</button>
                     </PDFDownloadLink>
                 </div>
             </div>
-            <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} reportType={reportType} logoBase64={previewData.logoBase64} /></PDFViewer>
+            <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} reportType={reportType} logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} /></PDFViewer>
         </div>
     )
   }
@@ -435,12 +412,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         {activeTab === 'dashboard' && (
            <div>
                <h1 className="text-2xl font-bold mb-6 text-slate-800">Welcome, {school?.name}</h1>
-               {school && (
-                   <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 rounded-lg shadow-lg mb-6 flex justify-between items-center">
-                       <div><h2 className="text-lg font-bold">School ID / Teacher Code</h2><p className="text-blue-100 text-sm">Share this code with your teachers for registration.</p></div>
-                       <div className="bg-white/20 p-3 rounded-lg"><code className="text-2xl font-mono font-bold tracking-widest">{school.id}</code></div>
-                   </div>
-               )}
                <div className="grid grid-cols-3 gap-6">
                    <div className="bg-white p-6 rounded shadow border-l-4 border-blue-500"><h3>Total Students</h3><p className="text-3xl font-bold text-slate-700">{students.length}</p></div>
                    <div className="bg-white p-6 rounded shadow border-l-4 border-green-500"><h3>Teachers</h3><p className="text-3xl font-bold text-slate-700">{teachers.length}</p></div>
@@ -464,12 +435,19 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                             <div><label className="text-xs font-bold text-gray-500">CURRENT TERM</label><input name="current_term" defaultValue={school?.current_term} className="w-full p-2 border rounded" /></div>
                             <div><label className="text-xs font-bold text-gray-500">SESSION</label><input name="current_session" defaultValue={school?.current_session} className="w-full p-2 border rounded" /></div>
                         </div>
-                        <div>
-                            <label className="block text-sm font-bold mb-1">Logo</label>
-                            <input type="file" name="logo_file" className="text-sm border p-2 w-full rounded" />
-                            {school?.logo_url && <img src={school.logo_url} alt="Logo" className="h-16 mt-2 border p-1" />}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-bold mb-1">School Logo</label>
+                                <input type="file" name="logo_file" className="text-xs border p-2 w-full rounded" />
+                                {school?.logo_url && <img src={school.logo_url} alt="Logo" className="h-10 mt-2 object-contain" />}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold mb-1">Principal Signature</label>
+                                <input type="file" name="sig_file" className="text-xs border p-2 w-full rounded" />
+                                {school?.principal_signature_url && <img src={school.principal_signature_url} alt="Sig" className="h-10 mt-2 object-contain" />}
+                            </div>
                         </div>
-                        <button disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded w-full flex justify-center">{loading ? <Loader2 className="animate-spin"/> : 'Save Changes'}</button>
+                        <button disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded w-full flex justify-center mt-4">{loading ? <Loader2 className="animate-spin"/> : 'Save Changes'}</button>
                     </form>
                 </div>
                 <div className="bg-white p-6 rounded shadow h-fit">
@@ -491,6 +469,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                         <input placeholder="Max" type="number" className="border p-2 rounded w-16 text-sm" value={newConfig.max} onChange={e=>setNewConfig({...newConfig, max:parseInt(e.target.value)})} />
                         <button onClick={addConfigField} className="bg-green-600 text-white px-3 rounded text-sm font-bold">Add</button>
                     </div>
+                    <p className="text-xs text-gray-500 mt-2 italic">Note: Fields named "Exam" are excluded from Mid-Term Reports automatically.</p>
                 </div>
             </div>
         )}
@@ -505,7 +484,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                         <select name="class_id" className="border p-2 rounded" required>{classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
                         <button className="bg-green-600 text-white p-2 rounded font-bold flex items-center justify-center gap-2"><Plus size={18}/> Register</button>
                     </form>
-                    <p className="text-xs text-gray-500 mt-2">* Admission No. generated automatically (Year/Random)</p>
                 </div>
                 <div className="bg-white rounded shadow overflow-hidden">
                     <table className="w-full text-left text-sm">
@@ -604,8 +582,22 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setSelectedStudent(null);
     const { data: sub } = await supabase.from('subjects').select('*').eq('class_id', classId);
     setSubjects(sub || []);
-    const { data: stu } = await supabase.from('students').select('*').eq('class_id', classId).order('name');
+    const { data: stu } = await supabase.from('students').select('*, classes(profiles(signature_url))').eq('class_id', classId).order('name');
     setStudents(stu || []);
+  };
+
+  const uploadSignature = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const fileName = `sig-user-${profile.id}-${Date.now()}.${file.name.split('.').pop()}`;
+      const { error } = await supabase.storage.from('school-assets').upload(fileName, file);
+      if(!error) {
+          const { data } = supabase.storage.from('school-assets').getPublicUrl(fileName);
+          await supabase.from('profiles').update({ signature_url: data.publicUrl }).eq('id', profile.id);
+          window.alert("Signature Uploaded!");
+      } else {
+          window.alert("Upload failed");
+      }
   };
 
   const loadStudentData = async (student) => {
@@ -635,6 +627,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       const subScores = scores[s.id] || {};
       let total = 0;
       schoolConfig.forEach(c => total += (subScores[c.code] || 0));
+      // Grade calculation here is just a placeholder, real calc happens in PDF based on report type
       const { grade, remark } = calculateGrade(total);
       return { student_id: selectedStudent.id, subject_id: s.id, scores: subScores, total, grade, remarks: remark };
     });
@@ -649,8 +642,20 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     await saveResultToDB();
     const { data: results } = await supabase.from('results').select('*, subjects(*)').eq('student_id', selectedStudent.id);
     const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviors[trait] || 'Good' }));
+    
+    // Convert Images
     const logoBase64 = await imageUrlToBase64(schoolData.logo_url);
-    setPreviewData({ school: schoolData, student: selectedStudent, classInfo: { ...curClass }, results: results || [], comments: { tutor_comment: comment }, behaviors: behaviorArray, logoBase64 });
+    const principalSigBase64 = await imageUrlToBase64(schoolData.principal_signature_url);
+    
+    // Teacher signature: Look it up from profile
+    const { data: teacherProfile } = await supabase.from('profiles').select('signature_url').eq('id', profile.id).single();
+    const teacherSigBase64 = await imageUrlToBase64(teacherProfile?.signature_url);
+
+    setPreviewData({ 
+        school: schoolData, student: selectedStudent, classInfo: { ...curClass }, 
+        results: results || [], comments: { tutor_comment: comment }, behaviors: behaviorArray, 
+        logoBase64, principalSigBase64, teacherSigBase64
+    });
   };
 
   if (previewData) {
@@ -660,10 +665,10 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   <button onClick={() => setPreviewData(null)} className="flex items-center gap-2"><X /> Close</button>
                   <div className="flex gap-2">
                      <button onClick={async()=>{if(window.confirm('Submit to Admin?')){ await saveResultToDB('awaiting_approval'); setPreviewData(null); }}} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2"><ShieldCheck size={18}/> Submit for Approval</button>
-                     <PDFDownloadLink document={<ResultPDF {...previewData} logoBase64={previewData.logoBase64} />} fileName="Result.pdf"><button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Download /> PDF</button></PDFDownloadLink>
+                     <PDFDownloadLink document={<ResultPDF {...previewData} logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="Result.pdf"><button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Download /> PDF</button></PDFDownloadLink>
                   </div>
               </div>
-              <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} logoBase64={previewData.logoBase64} /></PDFViewer>
+              <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} /></PDFViewer>
           </div>
       );
   }
@@ -674,6 +679,13 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         <div className="p-4 bg-slate-900 text-white">
             <h2 className="font-bold truncate text-lg">{profile.full_name}</h2>
             <button onClick={onLogout} className="text-xs text-red-300 flex items-center gap-1 mt-2"><LogOut size={12}/> Logout</button>
+            <div className="mt-4 border-t border-slate-700 pt-3">
+                 <label className="text-xs text-gray-400 block mb-1">My Signature</label>
+                 <div className="flex items-center gap-2">
+                    <input type="file" id="t-sig" className="hidden" onChange={uploadSignature} />
+                    <label htmlFor="t-sig" className="bg-slate-700 text-xs px-2 py-1 rounded cursor-pointer hover:bg-slate-600 flex items-center gap-1"><Upload size={10}/> Upload</label>
+                 </div>
+            </div>
             <select className="mt-4 w-full text-black p-2 rounded text-sm" onChange={(e) => loadClass(parseInt(e.target.value))}>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -728,7 +740,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                         </tbody>
                     </table>
                 </div>
-
+                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="bg-white p-6 rounded shadow border">
                         <h3 className="font-bold mb-4 border-b pb-2">Behavioral Traits</h3>
@@ -824,7 +836,7 @@ const ParentPortal = ({ onBack }) => {
 
     const fetchResult = async (e) => {
         e.preventDefault(); setLoading(true);
-        const { data: stu } = await supabase.from('students').select('*, schools(*), classes(*), comments(*), results(*, subjects(*))').eq('admission_no', creds.adm).eq('parent_pin', creds.pin).maybeSingle();
+        const { data: stu } = await supabase.from('students').select('*, schools(*), classes(*, profiles(signature_url)), comments(*), results(*, subjects(*))').eq('admission_no', creds.adm).eq('parent_pin', creds.pin).maybeSingle();
         if (!stu) { window.alert('Invalid Credentials'); setLoading(false); return; }
         
         const comm = Array.isArray(stu.comments) ? stu.comments[0] : stu.comments;
@@ -832,8 +844,17 @@ const ParentPortal = ({ onBack }) => {
 
         const behaviors = comm?.behaviors ? JSON.parse(comm.behaviors) : {};
         const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviors[trait] || 'Good' }));
+        
+        // Load Images
         const logoBase64 = await imageUrlToBase64(stu.schools.logo_url);
-        setData({ student: stu, school: stu.schools, classInfo: stu.classes, results: stu.results, comments: comm || {}, behaviors: behaviorArray, logoBase64 });
+        const principalSigBase64 = await imageUrlToBase64(stu.schools.principal_signature_url);
+        const teacherSigBase64 = await imageUrlToBase64(stu.classes?.profiles?.signature_url);
+
+        setData({ 
+            student: stu, school: stu.schools, classInfo: stu.classes, 
+            results: stu.results, comments: comm || {}, behaviors: behaviorArray, 
+            logoBase64, principalSigBase64, teacherSigBase64 
+        });
         setLoading(false);
     };
 
@@ -842,11 +863,11 @@ const ParentPortal = ({ onBack }) => {
             <div className="bg-white p-4 shadow flex justify-between items-center">
                 <button onClick={()=>setData(null)} className="flex items-center gap-2 font-bold"><X /> Exit Portal</button>
                 <div className="flex gap-3">
-                    <PDFDownloadLink document={<ResultPDF {...data} reportType="mid" logoBase64={data.logoBase64} />} fileName="MidTerm.pdf"><button className="bg-blue-100 text-blue-800 px-4 py-2 rounded font-bold">Mid-Term PDF</button></PDFDownloadLink>
-                    <PDFDownloadLink document={<ResultPDF {...data} reportType="full" logoBase64={data.logoBase64} />} fileName="FullTerm.pdf"><button className="bg-green-600 text-white px-4 py-2 rounded font-bold shadow">Full-Term PDF</button></PDFDownloadLink>
+                    <PDFDownloadLink document={<ResultPDF {...data} reportType="mid" logoBase64={data.logoBase64} principalSigBase64={data.principalSigBase64} teacherSigBase64={data.teacherSigBase64} />} fileName="MidTerm.pdf"><button className="bg-blue-100 text-blue-800 px-4 py-2 rounded font-bold">Mid-Term PDF</button></PDFDownloadLink>
+                    <PDFDownloadLink document={<ResultPDF {...data} reportType="full" logoBase64={data.logoBase64} principalSigBase64={data.principalSigBase64} teacherSigBase64={data.teacherSigBase64} />} fileName="FullTerm.pdf"><button className="bg-green-600 text-white px-4 py-2 rounded font-bold shadow">Full-Term PDF</button></PDFDownloadLink>
                 </div>
             </div>
-            <PDFViewer className="flex-1 w-full"><ResultPDF {...data} reportType="full" logoBase64={data.logoBase64} /></PDFViewer>
+            <PDFViewer className="flex-1 w-full"><ResultPDF {...data} reportType="full" logoBase64={data.logoBase64} principalSigBase64={data.principalSigBase64} teacherSigBase64={data.teacherSigBase64} /></PDFViewer>
         </div>
     );
 
