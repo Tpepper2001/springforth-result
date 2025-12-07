@@ -5,7 +5,7 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, User, Download,
-  X, Eye, Trash2, ShieldCheck, Save, Menu, Upload, Users, Key, Copy, Lock
+  X, Eye, Trash2, ShieldCheck, Save, Menu, Upload, Users, Key, Copy
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -843,34 +843,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 };
 
 // ==================== AUTH & PORTALS ====================
-
-const CentralAdminLogin = ({ onLogin }) => {
-    const [creds, setCreds] = useState({ user: '', pass: '' });
-    
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        // Check credentials
-        if (creds.user === 'oluwatoyin' && creds.pass === 'Funmilola') {
-            onLogin();
-        } else {
-            window.alert("Invalid Central Admin Credentials");
-        }
-    };
-
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
-            <form onSubmit={handleSubmit} className="bg-slate-800 p-8 rounded-xl shadow-xl w-full max-w-sm border border-slate-700">
-                <div className="flex justify-center mb-4"><Lock className="text-red-500" size={32} /></div>
-                <h2 className="text-2xl font-bold text-center mb-6 text-white">Central Admin</h2>
-                <input placeholder="Username" className="w-full p-3 border border-slate-600 rounded mb-3 bg-slate-700 text-white placeholder-slate-400" onChange={e=>setCreds({...creds, user:e.target.value})} required />
-                <input type="password" placeholder="Password" className="w-full p-3 border border-slate-600 rounded mb-4 bg-slate-700 text-white placeholder-slate-400" onChange={e=>setCreds({...creds, pass:e.target.value})} required />
-                <button className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded font-bold transition">Login</button>
-                <a href="/" className="w-full text-center text-slate-500 text-xs mt-4 block hover:text-white">Return to Main Site</a>
-            </form>
-        </div>
-    );
-};
-
 const Auth = ({ onLogin, onParent }) => {
     const [mode, setMode] = useState('login'); 
     const [form, setForm] = useState({ email: '', password: '', name: '', pin: '', schoolCode: '' });
@@ -879,7 +851,9 @@ const Auth = ({ onLogin, onParent }) => {
     const handleAuth = async (e) => {
         e.preventDefault(); setLoading(true);
         try {
-            if (mode === 'school_reg') {
+            if (mode === 'central') {
+                if (form.email === 'oluwatoyin' && form.password === 'Funmilola') onLogin({ role: 'central' });
+            } else if (mode === 'school_reg') {
                 const { data: pinData } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
                 if (!pinData) throw new Error('Invalid or Used PIN');
                 const { data: auth } = await supabase.auth.signUp({ email: form.email, password: form.password });
@@ -944,6 +918,7 @@ const Auth = ({ onLogin, onParent }) => {
                 {mode === 'login' && (
                     <div className="mt-6 pt-4 border-t">
                         <button onClick={onParent} className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold flex items-center justify-center gap-2"><User size={20}/> Check Student Result</button>
+                        <button onClick={()=>setMode('central')} className="text-xs text-gray-300 mt-4 mx-auto block">Central Admin</button>
                     </div>
                 )}
             </div>
@@ -1028,20 +1003,8 @@ const App = () => {
   const [profile, setProfile] = useState(null);
   const [view, setView] = useState('auth');
   const [loading, setLoading] = useState(true);
-  
-  // Central Admin State
-  const [isCentralUrl, setIsCentralUrl] = useState(false);
-  const [centralLoggedIn, setCentralLoggedIn] = useState(false);
 
   useEffect(() => {
-    // 1. Check if we are on the hidden URL
-    if (window.location.pathname === '/centraladmin') {
-        setIsCentralUrl(true);
-        setLoading(false);
-        return;
-    }
-
-    // 2. Standard Auth Flow
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); if(!session) setLoading(false); });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session); if (!session) { setProfile(null); setView('auth'); setLoading(false); }
@@ -1061,23 +1024,9 @@ const App = () => {
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-blue-600" size={48}/></div>;
 
-  // ==================== ROUTING LOGIC ====================
-  
-  // 1. Central Admin Portal (Hidden Route)
-  if (isCentralUrl) {
-      if (centralLoggedIn) {
-          return <CentralAdmin onLogout={() => { setCentralLoggedIn(false); window.location.href = '/'; }} />;
-      }
-      return <CentralAdminLogin onLogin={() => setCentralLoggedIn(true)} />;
-  }
-
-  // 2. Parent Portal View
+  if (view === 'central') return <CentralAdmin onLogout={() => setView('auth')} />;
   if (view === 'parent') return <ParentPortal onBack={() => setView('auth')} />;
-
-  // 3. Public Auth View (Login/Register/Check Result)
-  if (!session) return <Auth onLogin={() => {}} onParent={() => setView('parent')} />;
-  
-  // 4. Authenticated App Views
+  if (!session) return <Auth onLogin={(d) => setView(d.role === 'central' ? 'central' : 'dashboard')} onParent={() => setView('parent')} />;
   if (!profile) return <div className="h-screen flex items-center justify-center text-red-500 font-bold">Profile Error. Please contact support.</div>;
 
   return profile.role === 'admin' ? <SchoolAdmin profile={profile} onLogout={() => supabase.auth.signOut()} /> : <TeacherDashboard profile={profile} onLogout={() => supabase.auth.signOut()} />;
