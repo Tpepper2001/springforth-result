@@ -20,9 +20,18 @@ const BEHAVIORAL_TRAITS = [
 ];
 const RATINGS = ['Excellent', 'Very Good', 'Good', 'Fair', 'Poor'];
 
-const calculateGrade = (total, maxScore = 100) => {
-  // Normalize score to 100% if it's a CA report (e.g. max is 40)
-  const percentage = (total / maxScore) * 100;
+// Helper to determine if a field is an exam based on name/code
+const isExamField = (str) => {
+    if (!str) return false;
+    const s = str.toLowerCase();
+    return s.includes('exam') || s.includes('examination');
+};
+
+const calculateGrade = (obtained, maxPossible) => {
+  // Guard against division by zero
+  if (!maxPossible || maxPossible === 0) return { grade: '-', remark: '-' };
+
+  const percentage = (obtained / maxPossible) * 100;
   
   if (percentage >= 86) return { grade: 'A*', remark: 'Distinction' };
   if (percentage >= 76) return { grade: 'A', remark: 'Excellent' };
@@ -118,13 +127,15 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
   const isMidTerm = reportType === 'mid';
   const config = school.assessment_config || [];
   
-  // Mid-Term Calculation: Exclude 'exam' fields
-  const displayFields = isMidTerm ? config.filter(f => f.code.toLowerCase() !== 'exam') : config;
+  // LOGIC: Filter out "Exam" or "Examination" for Mid-Term
+  const displayFields = isMidTerm 
+    ? config.filter(f => !isExamField(f.code) && !isExamField(f.name)) 
+    : config;
   
-  // Calculate max score for this report type to scale grades correctly
+  // Calculate max score for this report type (CA Max or Total Max)
   const maxPossibleScore = displayFields.reduce((sum, f) => sum + parseInt(f.max), 0);
 
-  const fixedWidths = 6 + 30 + 10 + (isMidTerm ? 0 : 10) + 15; 
+  const fixedWidths = 6 + 30 + 10 + 10 + 15; 
   const remainingWidth = 100 - fixedWidths;
   const scoreColWidth = displayFields.length > 0 ? `${remainingWidth / displayFields.length}%` : '0%';
 
@@ -132,14 +143,20 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
     const rawScores = r.scores || {};
     let total = 0;
     displayFields.forEach(f => total += (parseFloat(rawScores[f.code]) || 0));
+    
+    // KEY CHANGE: Grade is calculated based on percentage of what is displayed
     const { grade, remark } = calculateGrade(total, maxPossibleScore);
+    
     return { ...r, scores: rawScores, total, grade, remark };
   });
 
   const totalScore = processedResults.reduce((acc, r) => acc + r.total, 0);
-  // Calculate average based on the max possible score of the specific term type
+  // Average percentage
   const average = ((totalScore / (results.length * maxPossibleScore)) * 100).toFixed(1);
   const behaviorMap = Object.fromEntries(behaviors.map(b => [b.trait, b.rating]));
+
+  // Select appropriate comment
+  const teacherComment = isMidTerm ? (comments?.midterm_tutor_comment || "No mid-term comment.") : (comments?.tutor_comment || "No comment.");
 
   return (
     <Document>
@@ -189,7 +206,8 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
             <Text style={[pdfStyles.cell, pdfStyles.colSubject, pdfStyles.headerText]}>SUBJECT</Text>
             {displayFields.map(f => <Text key={f.code} style={[pdfStyles.cell, {width: scoreColWidth, textAlign: 'center'}, pdfStyles.headerText]}>{f.name.toUpperCase()}</Text>)}
             <Text style={[pdfStyles.cell, pdfStyles.colTotal, pdfStyles.headerText]}>TOT</Text>
-            {!isMidTerm && <Text style={[pdfStyles.cell, pdfStyles.colGrade, pdfStyles.headerText]}>GRD</Text>}
+            {/* Show Grade in CA report too, based on percentage */}
+            <Text style={[pdfStyles.cell, pdfStyles.colGrade, pdfStyles.headerText]}>GRD</Text>
             <Text style={[pdfStyles.cell, pdfStyles.colRemark, pdfStyles.headerText]}>REMARK</Text>
           </View>
           {processedResults.map((r, i) => (
@@ -198,15 +216,15 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
               <Text style={[pdfStyles.cell, pdfStyles.colSubject]}>{r.subjects?.name}</Text>
               {displayFields.map(f => <Text key={f.code} style={[pdfStyles.cell, {width: scoreColWidth, textAlign: 'center'}]}>{r.scores[f.code] || 0}</Text>)}
               <Text style={[pdfStyles.cell, pdfStyles.colTotal]}>{r.total}</Text>
-              {!isMidTerm && <Text style={[pdfStyles.cell, pdfStyles.colGrade]}>{r.grade}</Text>}
-              <Text style={[pdfStyles.cell, pdfStyles.colRemark]}>{isMidTerm ? (r.total >= (maxPossibleScore/2) ? 'Pass' : 'Fail') : r.remark}</Text>
+              <Text style={[pdfStyles.cell, pdfStyles.colGrade]}>{r.grade}</Text>
+              <Text style={[pdfStyles.cell, pdfStyles.colRemark]}>{r.remark}</Text>
             </View>
           ))}
         </View>
 
         {/* FOOTER SECTIONS */}
-        {!isMidTerm && (
         <View style={{ flexDirection: 'row', gap: 15 }}>
+            {!isMidTerm && (
             <View style={{ flex: 1, borderWidth: 1, borderColor: '#e2e8f0', padding: 8 }}>
                 <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', marginBottom: 5 }}>BEHAVIOURAL TRAITS</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
@@ -218,28 +236,33 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
                     ))}
                 </View>
             </View>
+            )}
+            
             <View style={{ flex: 1 }}>
                 <View style={{ marginBottom: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 8 }}>
                     <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold' }}>CLASS TUTOR'S REMARK</Text>
-                    <Text style={{ fontSize: 8, fontStyle: 'italic', marginTop: 3 }}>{comments?.tutor_comment || 'No comment provided.'}</Text>
+                    <Text style={{ fontSize: 8, fontStyle: 'italic', marginTop: 3 }}>{teacherComment}</Text>
                 </View>
+                {!isMidTerm && (
                 <View style={{ borderWidth: 1, borderColor: '#e2e8f0', padding: 8 }}>
                     <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold' }}>PRINCIPAL'S REMARK</Text>
                     <Text style={{ fontSize: 8, fontStyle: 'italic', marginTop: 3 }}>{comments?.principal_comment || 'Result Verified and Approved.'}</Text>
                 </View>
+                )}
             </View>
         </View>
-        )}
 
         <View style={pdfStyles.footerContainer}>
             <View style={pdfStyles.signatureBox}>
                 {teacherSigBase64 ? <PDFImage src={teacherSigBase64} style={pdfStyles.signatureImage} /> : null}
                 <Text style={pdfStyles.signatureText}>Class Tutor Signature</Text>
             </View>
+            {!isMidTerm && (
             <View style={pdfStyles.signatureBox}>
                 {principalSigBase64 ? <PDFImage src={principalSigBase64} style={pdfStyles.signatureImage} /> : null}
                 <Text style={pdfStyles.signatureText}>Principal Signature</Text>
             </View>
+            )}
         </View>
       </Page>
     </Document>
@@ -268,7 +291,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     if (s) {
       const { data: cls } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', s.id);
       setClasses(cls || []);
-      // Need to fetch students with class info AND the form tutor's profile to get teacher signature later
       const { data: stu } = await supabase.from('students').select('*, classes(name, form_tutor_id, profiles(signature_url)), comments(submission_status)').eq('school_id', s.id).order('name');
       setStudents(stu || []);
       const { data: tch } = await supabase.from('profiles').select('*').eq('school_id', s.id).eq('role', 'teacher');
@@ -306,7 +328,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         }
     }
     
-    // Extract other fields
     const updates = {
         name: formData.get('name'),
         address: formData.get('address'),
@@ -363,11 +384,8 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     const behaviorList = comments?.behaviors ? JSON.parse(comments.behaviors) : {};
     const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviorList[trait] || 'Good' }));
     
-    // Convert Images to Base64 for PDF
     const logoBase64 = await imageUrlToBase64(school.logo_url);
     const principalSigBase64 = await imageUrlToBase64(school.principal_signature_url);
-    
-    // Get Teacher Signature from the student's class profile linkage
     const teacherUrl = student.classes?.profiles?.signature_url;
     const teacherSigBase64 = await imageUrlToBase64(teacherUrl);
 
@@ -469,7 +487,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                         <input placeholder="Max" type="number" className="border p-2 rounded w-16 text-sm" value={newConfig.max} onChange={e=>setNewConfig({...newConfig, max:parseInt(e.target.value)})} />
                         <button onClick={addConfigField} className="bg-green-600 text-white px-3 rounded text-sm font-bold">Add</button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-2 italic">Note: Fields named "Exam" are excluded from Mid-Term Reports automatically.</p>
+                    <p className="text-xs text-gray-500 mt-2 italic">Note: Fields containing "Exam" or "Examination" are excluded from Mid-Term Reports automatically.</p>
                 </div>
             </div>
         )}
@@ -553,7 +571,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [scores, setScores] = useState({});
   const [behaviors, setBehaviors] = useState({});
-  const [comment, setComment] = useState("");
+  const [comments, setComments] = useState({ full: "", mid: "" });
   const [previewData, setPreviewData] = useState(null);
   const [schoolConfig, setSchoolConfig] = useState([]);
   const [schoolData, setSchoolData] = useState(null);
@@ -610,7 +628,10 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     });
     setScores(scoreMap);
     const { data: comm } = await supabase.from('comments').select('*').eq('student_id', student.id).maybeSingle();
-    setComment(comm?.tutor_comment || "");
+    setComments({ 
+        full: comm?.tutor_comment || "", 
+        mid: comm?.midterm_tutor_comment || "" 
+    });
     setBehaviors(comm?.behaviors ? JSON.parse(comm.behaviors) : {});
     setSelectedStudent(student);
   };
@@ -627,13 +648,19 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       const subScores = scores[s.id] || {};
       let total = 0;
       schoolConfig.forEach(c => total += (subScores[c.code] || 0));
-      // Grade calculation here is just a placeholder, real calc happens in PDF based on report type
-      const { grade, remark } = calculateGrade(total);
-      return { student_id: selectedStudent.id, subject_id: s.id, scores: subScores, total, grade, remarks: remark };
+      return { student_id: selectedStudent.id, subject_id: s.id, scores: subScores, total };
     });
     await supabase.from('results').delete().eq('student_id', selectedStudent.id);
     await supabase.from('results').insert(resultsPayload);
-    const payload = { student_id: selectedStudent.id, school_id: curClass.school_id, tutor_comment: comment, behaviors: JSON.stringify(behaviors) };
+    
+    // Save both Mid and Full term comments
+    const payload = { 
+        student_id: selectedStudent.id, 
+        school_id: curClass.school_id, 
+        tutor_comment: comments.full,
+        midterm_tutor_comment: comments.mid, // Saving new field
+        behaviors: JSON.stringify(behaviors) 
+    };
     if (status) payload.submission_status = status;
     await supabase.from('comments').upsert(payload, { onConflict: 'student_id' });
   };
@@ -643,17 +670,15 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     const { data: results } = await supabase.from('results').select('*, subjects(*)').eq('student_id', selectedStudent.id);
     const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviors[trait] || 'Good' }));
     
-    // Convert Images
     const logoBase64 = await imageUrlToBase64(schoolData.logo_url);
     const principalSigBase64 = await imageUrlToBase64(schoolData.principal_signature_url);
     
-    // Teacher signature: Look it up from profile
     const { data: teacherProfile } = await supabase.from('profiles').select('signature_url').eq('id', profile.id).single();
     const teacherSigBase64 = await imageUrlToBase64(teacherProfile?.signature_url);
 
     setPreviewData({ 
         school: schoolData, student: selectedStudent, classInfo: { ...curClass }, 
-        results: results || [], comments: { tutor_comment: comment }, behaviors: behaviorArray, 
+        results: results || [], comments: { tutor_comment: comments.full, midterm_tutor_comment: comments.mid }, behaviors: behaviorArray, 
         logoBase64, principalSigBase64, teacherSigBase64
     });
   };
@@ -665,10 +690,11 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   <button onClick={() => setPreviewData(null)} className="flex items-center gap-2"><X /> Close</button>
                   <div className="flex gap-2">
                      <button onClick={async()=>{if(window.confirm('Submit to Admin?')){ await saveResultToDB('awaiting_approval'); setPreviewData(null); }}} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2"><ShieldCheck size={18}/> Submit for Approval</button>
-                     <PDFDownloadLink document={<ResultPDF {...previewData} logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="Result.pdf"><button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Download /> PDF</button></PDFDownloadLink>
+                     <PDFDownloadLink document={<ResultPDF {...previewData} reportType="mid" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="MidTerm.pdf"><button className="bg-blue-100 text-blue-700 px-4 py-2 rounded flex items-center gap-2 font-bold"><Download /> Mid-Term</button></PDFDownloadLink>
+                     <PDFDownloadLink document={<ResultPDF {...previewData} reportType="full" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="FullTerm.pdf"><button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 font-bold"><Download /> Full-Term</button></PDFDownloadLink>
                   </div>
               </div>
-              <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} /></PDFViewer>
+              <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} reportType="full" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} /></PDFViewer>
           </div>
       );
   }
@@ -755,9 +781,17 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                             ))}
                         </div>
                     </div>
-                    <div className="bg-white p-6 rounded shadow h-fit border">
-                        <h3 className="font-bold mb-4 border-b pb-2">Class Teacher's Comment</h3>
-                        <textarea className="w-full border rounded p-3 h-32 text-sm focus:ring-2 focus:ring-blue-200 outline-none resize-none" placeholder="Write a comment about the student's performance..." value={comment} onChange={(e) => { setComment(e.target.value); save(); }} />
+                    
+                    {/* UPDATED: Separate Input Boxes for Mid-Term vs Full-Term Comments */}
+                    <div className="space-y-4">
+                        <div className="bg-white p-6 rounded shadow h-fit border">
+                            <h3 className="font-bold mb-2 border-b pb-2 text-blue-600">Mid-Term / CA Comment</h3>
+                            <textarea className="w-full border rounded p-3 h-24 text-sm focus:ring-2 focus:ring-blue-200 outline-none resize-none" placeholder="Comment for Mid-Term report only..." value={comments.mid} onChange={(e) => { setComments(p => ({...p, mid: e.target.value})); save(); }} />
+                        </div>
+                        <div className="bg-white p-6 rounded shadow h-fit border">
+                            <h3 className="font-bold mb-2 border-b pb-2 text-green-600">Full Term Comment</h3>
+                            <textarea className="w-full border rounded p-3 h-24 text-sm focus:ring-2 focus:ring-green-200 outline-none resize-none" placeholder="Comment for End of Term report..." value={comments.full} onChange={(e) => { setComments(p => ({...p, full: e.target.value})); save(); }} />
+                        </div>
                     </div>
                 </div>
             </div>
