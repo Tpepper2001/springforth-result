@@ -5,7 +5,7 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, User, Download,
-  X, Eye, Trash2, ShieldCheck, Save, Menu, Upload, Users, Key
+  X, Eye, Trash2, ShieldCheck, Save, Menu, Upload, Users, Key, Copy
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -254,10 +254,9 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     setLoading(true);
     const { data: s } = await supabase.from('schools').select('*').eq('owner_id', profile.id).single();
     if(!s && profile.school_id) {
-       // Handle co-admins
        const { data: subS } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
        setSchool(subS);
-       await loadRelated(subS.id);
+       if(subS) await loadRelated(subS.id);
     } else {
        setSchool(s);
        if(s) await loadRelated(s.id);
@@ -334,9 +333,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       const name = fd.get('name');
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       
-      const currentInvites = school.admin_invites || []; // Using a JSONB column in 'schools' for simplicity
-      // Schema needs: schools table has a column 'admin_invites' type jsonb default []
-      
+      const currentInvites = school.admin_invites || [];
       const newInvite = { email, name, code, created_at: new Date().toISOString() };
       const updatedInvites = [...currentInvites, newInvite];
 
@@ -346,9 +343,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
           e.target.reset();
           fetchSchoolData();
       } else {
-          // If the column doesn't exist, we fallback or handle error. 
-          // Assuming schema flexibility or JSON column exists.
-          window.alert("Error creating invite (Ensure DB has admin_invites column): " + error.message);
+          window.alert("Error creating invite: " + error.message);
       }
   };
 
@@ -482,7 +477,20 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         {activeTab === 'info' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="bg-white p-6 rounded shadow">
-                    <h2 className="text-xl font-bold mb-4 border-b pb-2">School Details</h2>
+                    <div className="bg-blue-50 border border-blue-200 p-4 rounded mb-6">
+                        <h3 className="text-blue-800 font-bold text-sm mb-1 uppercase">Teacher Registration Code (School ID)</h3>
+                        <div className="flex items-center gap-2">
+                            <code className="bg-white px-3 py-2 rounded border border-blue-200 font-mono text-lg font-bold select-all flex-1 text-center overflow-x-auto">
+                                {school?.id}
+                            </code>
+                            <button onClick={() => {navigator.clipboard.writeText(school.id); window.alert('Copied!');}} className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700">
+                                <Copy size={18}/>
+                            </button>
+                        </div>
+                        <p className="text-xs text-blue-600 mt-2">Give this ID to teachers so they can join your school.</p>
+                    </div>
+
+                    <h2 className="text-xl font-bold mb-4 border-b pb-2">Edit School Details</h2>
                     <form onSubmit={updateSchool} className="space-y-4">
                         <div><label className="text-xs font-bold text-gray-500">SCHOOL NAME</label><input name="name" defaultValue={school?.name} className="w-full p-2 border rounded" /></div>
                         <div><label className="text-xs font-bold text-gray-500">ADDRESS</label><input name="address" defaultValue={school?.address} className="w-full p-2 border rounded" placeholder="Street Address, State" /></div>
@@ -865,26 +873,17 @@ const Auth = ({ onLogin, onParent }) => {
                      if (!sch) throw new Error('Invalid School Code');
                      schoolId = sch.id;
                  } else {
-                     // Check Admin Invite
-                     // Note: To be secure, we need to iterate schools to find who issued this code, or use a specific invites table.
-                     // Since we used a JSONB column on schools, we must query schools that contain this invite.
-                     // Supabase PostgREST allows searching JSON arrays.
                      const { data: schs } = await supabase.from('schools').select('*'); 
                      const targetSchool = schs?.find(s => (s.admin_invites || []).some(inv => inv.code === form.schoolCode && inv.email === form.email));
                      
                      if (!targetSchool) throw new Error("Invalid Invite Code or Email mismatch.");
                      schoolId = targetSchool.id;
-
-                     // Remove invite logic would ideally be here, but we need auth first.
-                     // We will remove it after successful creation if possible, or leave it.
-                     // For this simple version, we proceed.
                  }
 
                  const { data: auth } = await supabase.auth.signUp({ email: form.email, password: form.password });
                  if(auth.user){
                     await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: role, school_id: schoolId });
                     
-                    // Cleanup invite if admin
                     if(role === 'admin') {
                         const { data: s } = await supabase.from('schools').select('admin_invites').eq('id', schoolId).single();
                         const updated = (s.admin_invites || []).filter(inv => inv.code !== form.schoolCode);
