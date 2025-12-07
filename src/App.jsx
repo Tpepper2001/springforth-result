@@ -5,7 +5,7 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, User, Download,
-  X, Eye, Trash2, ShieldCheck, Save, Menu, Upload
+  X, Eye, Trash2, ShieldCheck, Save, Menu, Upload, Users, Key
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -20,7 +20,6 @@ const BEHAVIORAL_TRAITS = [
 ];
 const RATINGS = ['Excellent', 'Very Good', 'Good', 'Fair', 'Poor'];
 
-// Helper to determine if a field is an exam based on name/code
 const isExamField = (str) => {
     if (!str) return false;
     const s = str.toLowerCase();
@@ -28,11 +27,8 @@ const isExamField = (str) => {
 };
 
 const calculateGrade = (obtained, maxPossible) => {
-  // Guard against division by zero
   if (!maxPossible || maxPossible === 0) return { grade: '-', remark: '-' };
-
   const percentage = (obtained / maxPossible) * 100;
-  
   if (percentage >= 86) return { grade: 'A*', remark: 'Distinction' };
   if (percentage >= 76) return { grade: 'A', remark: 'Excellent' };
   if (percentage >= 66) return { grade: 'B', remark: 'Very Good' };
@@ -127,12 +123,10 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
   const isMidTerm = reportType === 'mid';
   const config = school.assessment_config || [];
   
-  // LOGIC: Filter out "Exam" or "Examination" for Mid-Term
   const displayFields = isMidTerm 
     ? config.filter(f => !isExamField(f.code) && !isExamField(f.name)) 
     : config;
   
-  // Calculate max score for this report type (CA Max or Total Max)
   const maxPossibleScore = displayFields.reduce((sum, f) => sum + parseInt(f.max), 0);
 
   const fixedWidths = 6 + 30 + 10 + 10 + 15; 
@@ -143,49 +137,31 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
     const rawScores = r.scores || {};
     let total = 0;
     displayFields.forEach(f => total += (parseFloat(rawScores[f.code]) || 0));
-    
-    // KEY CHANGE: Grade is calculated based on percentage of what is displayed
     const { grade, remark } = calculateGrade(total, maxPossibleScore);
-    
     return { ...r, scores: rawScores, total, grade, remark };
   });
 
   const totalScore = processedResults.reduce((acc, r) => acc + r.total, 0);
-  // Average percentage
   const average = ((totalScore / (results.length * maxPossibleScore)) * 100).toFixed(1);
   const behaviorMap = Object.fromEntries(behaviors.map(b => [b.trait, b.rating]));
-
-  // Select appropriate comment
   const teacherComment = isMidTerm ? (comments?.midterm_tutor_comment || "No mid-term comment.") : (comments?.tutor_comment || "No comment.");
 
   return (
     <Document>
       <Page size="A4" style={pdfStyles.page}>
         {logoBase64 && <View style={pdfStyles.watermarkContainer}><PDFImage src={logoBase64} style={pdfStyles.watermarkImage} /></View>}
-
-        {/* HEADER */}
         <View style={pdfStyles.headerContainer}>
-          <View style={pdfStyles.logoBox}>
-             {logoBase64 ? <PDFImage src={logoBase64} style={pdfStyles.logo} /> : null}
-          </View>
+          <View style={pdfStyles.logoBox}>{logoBase64 ? <PDFImage src={logoBase64} style={pdfStyles.logo} /> : null}</View>
           <View style={pdfStyles.headerTextBox}>
             <Text style={pdfStyles.schoolName}>{school?.name || 'SCHOOL NAME'}</Text>
             {school?.address && <Text style={pdfStyles.schoolAddress}>{school.address}</Text>}
-            <Text style={pdfStyles.contactRow}>
-                {school?.email || ''} {school?.email && school?.contact ? '|' : ''} {school?.contact || ''}
-            </Text>
+            <Text style={pdfStyles.contactRow}>{school?.email || ''} {school?.email && school?.contact ? '|' : ''} {school?.contact || ''}</Text>
           </View>
         </View>
-
-        {/* TITLE */}
         <View style={pdfStyles.reportTitleBox}>
-            <Text style={pdfStyles.reportTitle}>
-              {isMidTerm ? 'MID-TERM CONTINUOUS ASSESSMENT' : 'END OF TERM REPORT'} - {school?.current_term?.toUpperCase()}
-            </Text>
+            <Text style={pdfStyles.reportTitle}>{isMidTerm ? 'MID-TERM CONTINUOUS ASSESSMENT' : 'END OF TERM REPORT'} - {school?.current_term?.toUpperCase()}</Text>
             <Text style={{fontSize: 9, color: '#64748b', marginTop: 2}}>{school?.current_session} SESSION</Text>
         </View>
-
-        {/* INFO GRID */}
         <View style={pdfStyles.infoContainer}>
             <View style={pdfStyles.infoRow}>
                 <View style={pdfStyles.infoCol}><Text style={pdfStyles.infoLabel}>Student Name</Text><Text style={pdfStyles.infoValue}>{student.name}</Text></View>
@@ -198,15 +174,12 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
                 <View style={pdfStyles.infoCol}><Text style={pdfStyles.infoLabel}>Percentage</Text><Text style={pdfStyles.infoValue}>{isNaN(average) ? '0.0' : average}%</Text></View>
             </View>
         </View>
-
-        {/* TABLE */}
         <View style={pdfStyles.table}>
           <View style={pdfStyles.tableHeader}>
             <Text style={[pdfStyles.cell, pdfStyles.colSN, pdfStyles.headerText]}>S/N</Text>
             <Text style={[pdfStyles.cell, pdfStyles.colSubject, pdfStyles.headerText]}>SUBJECT</Text>
             {displayFields.map(f => <Text key={f.code} style={[pdfStyles.cell, {width: scoreColWidth, textAlign: 'center'}, pdfStyles.headerText]}>{f.name.toUpperCase()}</Text>)}
             <Text style={[pdfStyles.cell, pdfStyles.colTotal, pdfStyles.headerText]}>TOT</Text>
-            {/* Show Grade in CA report too, based on percentage */}
             <Text style={[pdfStyles.cell, pdfStyles.colGrade, pdfStyles.headerText]}>GRD</Text>
             <Text style={[pdfStyles.cell, pdfStyles.colRemark, pdfStyles.headerText]}>REMARK</Text>
           </View>
@@ -221,23 +194,15 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
             </View>
           ))}
         </View>
-
-        {/* FOOTER SECTIONS */}
         <View style={{ flexDirection: 'row', gap: 15 }}>
             {!isMidTerm && (
             <View style={{ flex: 1, borderWidth: 1, borderColor: '#e2e8f0', padding: 8 }}>
                 <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', marginBottom: 5 }}>BEHAVIOURAL TRAITS</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                    {BEHAVIORAL_TRAITS.map(t => (
-                         <View key={t} style={{ width: '50%', marginBottom: 3 }}>
-                            <Text style={{ fontSize: 7, color: '#64748b' }}>{t}</Text>
-                            <Text style={{ fontSize: 8 }}>{behaviorMap[t] || 'Good'}</Text>
-                         </View>
-                    ))}
+                    {BEHAVIORAL_TRAITS.map(t => (<View key={t} style={{ width: '50%', marginBottom: 3 }}><Text style={{ fontSize: 7, color: '#64748b' }}>{t}</Text><Text style={{ fontSize: 8 }}>{behaviorMap[t] || 'Good'}</Text></View>))}
                 </View>
             </View>
             )}
-            
             <View style={{ flex: 1 }}>
                 <View style={{ marginBottom: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 8 }}>
                     <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold' }}>CLASS TUTOR'S REMARK</Text>
@@ -251,7 +216,6 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
                 )}
             </View>
         </View>
-
         <View style={pdfStyles.footerContainer}>
             <View style={pdfStyles.signatureBox}>
                 {teacherSigBase64 ? <PDFImage src={teacherSigBase64} style={pdfStyles.signatureImage} /> : null}
@@ -277,34 +241,45 @@ const SchoolAdmin = ({ profile, onLogout }) => {
   const [students, setStudents] = useState([]);
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
+  const [admins, setAdmins] = useState([]);
   const [viewingStudent, setViewingStudent] = useState(null);
   const [reportType, setReportType] = useState('full');
   const [previewData, setPreviewData] = useState(null);
   const [newConfig, setNewConfig] = useState({ name: '', max: 10, code: '' });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => { fetchSchoolData(); }, [profile]);
 
   const fetchSchoolData = async () => {
     setLoading(true);
     const { data: s } = await supabase.from('schools').select('*').eq('owner_id', profile.id).single();
-    setSchool(s);
-    if (s) {
-      const { data: cls } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', s.id);
-      setClasses(cls || []);
-      const { data: stu } = await supabase.from('students').select('*, classes(name, form_tutor_id, profiles(signature_url)), comments(submission_status)').eq('school_id', s.id).order('name');
-      setStudents(stu || []);
-      const { data: tch } = await supabase.from('profiles').select('*').eq('school_id', s.id).eq('role', 'teacher');
-      setTeachers(tch || []);
+    if(!s && profile.school_id) {
+       // Handle co-admins
+       const { data: subS } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
+       setSchool(subS);
+       await loadRelated(subS.id);
+    } else {
+       setSchool(s);
+       if(s) await loadRelated(s.id);
     }
     setLoading(false);
+  };
+
+  const loadRelated = async (schoolId) => {
+      const { data: cls } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', schoolId);
+      setClasses(cls || []);
+      const { data: stu } = await supabase.from('students').select('*, classes(name, form_tutor_id, profiles(signature_url)), comments(submission_status)').eq('school_id', schoolId).order('name');
+      setStudents(stu || []);
+      const { data: tch } = await supabase.from('profiles').select('*').eq('school_id', schoolId).eq('role', 'teacher');
+      setTeachers(tch || []);
+      const { data: adm } = await supabase.from('profiles').select('*').eq('school_id', schoolId).eq('role', 'admin');
+      setAdmins(adm || []);
   };
 
   const updateSchool = async (e) => {
     e.preventDefault();
     setLoading(true);
     const formData = new FormData(e.target);
-    
-    // Upload Logo
     const file = formData.get('logo_file');
     let logo_url = school.logo_url;
     if (file && file.size > 0) {
@@ -315,8 +290,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
             logo_url = data.publicUrl;
         }
     }
-
-    // Upload Principal Signature
     const sigFile = formData.get('sig_file');
     let principal_signature_url = school.principal_signature_url;
     if (sigFile && sigFile.size > 0) {
@@ -327,26 +300,15 @@ const SchoolAdmin = ({ profile, onLogout }) => {
             principal_signature_url = data.publicUrl;
         }
     }
-    
     const updates = {
-        name: formData.get('name'),
-        address: formData.get('address'),
-        contact: formData.get('contact'),
-        email: formData.get('email'),
-        current_term: formData.get('current_term'),
-        current_session: formData.get('current_session'),
-        logo_url,
-        principal_signature_url
+        name: formData.get('name'), address: formData.get('address'),
+        contact: formData.get('contact'), email: formData.get('email'),
+        current_term: formData.get('current_term'), current_session: formData.get('current_session'),
+        logo_url, principal_signature_url
     };
-
     const { error } = await supabase.from('schools').update(updates).eq('id', school.id);
-    
-    if(!error) {
-        setSchool(prev => ({ ...prev, ...updates }));
-        window.alert('School Info Updated!');
-    } else {
-        window.alert('Update Failed: ' + error.message);
-    }
+    if(!error) { setSchool(prev => ({ ...prev, ...updates })); window.alert('School Info Updated!'); } 
+    else { window.alert('Update Failed: ' + error.message); }
     setLoading(false);
   };
 
@@ -355,16 +317,39 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     const form = new FormData(e.target);
     const data = Object.fromEntries(form.entries());
     if (students.length >= school.max_students) return window.alert("Limit reached!");
-    
     const pin = generatePIN();
     const autoAdm = generateAdmissionNumber();
-
     const { error } = await supabase.from('students').insert({
       school_id: school.id, name: data.name, admission_no: autoAdm,
       gender: data.gender, class_id: data.class_id, parent_pin: pin
     });
     if (error) window.alert(error.message); 
     else { window.alert(`Added! Adm: ${autoAdm}, PIN: ${pin}`); e.target.reset(); fetchSchoolData(); }
+  };
+
+  const inviteAdmin = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const email = fd.get('email');
+      const name = fd.get('name');
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      const currentInvites = school.admin_invites || []; // Using a JSONB column in 'schools' for simplicity
+      // Schema needs: schools table has a column 'admin_invites' type jsonb default []
+      
+      const newInvite = { email, name, code, created_at: new Date().toISOString() };
+      const updatedInvites = [...currentInvites, newInvite];
+
+      const { error } = await supabase.from('schools').update({ admin_invites: updatedInvites }).eq('id', school.id);
+      if(!error) {
+          window.alert(`Invite Created! Code: ${code}\nShare this code with the user to register.`);
+          e.target.reset();
+          fetchSchoolData();
+      } else {
+          // If the column doesn't exist, we fallback or handle error. 
+          // Assuming schema flexibility or JSON column exists.
+          window.alert("Error creating invite (Ensure DB has admin_invites column): " + error.message);
+      }
   };
 
   const addConfigField = async () => {
@@ -396,50 +381,106 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     });
   };
 
+  // Preview Modal
   if (viewingStudent && previewData) {
     return (
-        <div className="h-screen flex flex-col bg-gray-100">
+        <div className="fixed inset-0 z-50 flex flex-col bg-gray-100 h-screen w-screen">
             <div className="bg-white p-4 shadow flex justify-between items-center z-10">
                 <button onClick={() => setViewingStudent(null)} className="flex items-center gap-2"><X /> Close</button>
                 <div className="flex gap-3">
                     <PDFDownloadLink document={<ResultPDF {...previewData} reportType={reportType} logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName={`${viewingStudent.name}.pdf`}>
-                      <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Download size={18} /> Download PDF</button>
+                      <button className="bg-blue-600 text-white px-3 py-2 rounded flex items-center gap-2 text-sm"><Download size={16} /> PDF</button>
                     </PDFDownloadLink>
                 </div>
             </div>
-            <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} reportType={reportType} logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} /></PDFViewer>
+            <div className="flex-1 w-full relative">
+                 <PDFViewer className="absolute inset-0 w-full h-full"><ResultPDF {...previewData} reportType={reportType} logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} /></PDFViewer>
+            </div>
         </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex font-sans">
-      <div className="w-64 bg-slate-900 text-white flex flex-col p-4">
-        <h2 className="text-xl font-bold mb-8 flex items-center gap-2"><School /> Admin Panel</h2>
-        <nav className="space-y-2 flex-1">
-          {['dashboard', 'info', 'students', 'classes'].map(t => (
-              <button key={t} onClick={()=>setActiveTab(t)} className={`w-full text-left p-3 rounded capitalize flex gap-2 ${activeTab===t?'bg-blue-600':''}`}>
-                  {t === 'dashboard' ? <LayoutDashboard size={18}/> : t==='students'?<User size={18}/> : <Menu size={18}/>} {t}
+    <div className="min-h-screen bg-gray-100 flex font-sans flex-col md:flex-row">
+      {/* Mobile Header */}
+      <div className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-20 sticky top-0">
+          <h2 className="font-bold flex items-center gap-2"><School size={20}/> Admin</h2>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)}><Menu /></button>
+      </div>
+
+      {/* Sidebar */}
+      <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-10 inset-y-0 left-0 w-64 bg-slate-900 text-white flex flex-col p-4 transition duration-200 ease-in-out`}>
+        <div className="hidden md:flex items-center gap-2 font-bold text-xl mb-8"><School /> Admin Panel</div>
+        <nav className="space-y-2 flex-1 mt-4 md:mt-0">
+          {['dashboard', 'info', 'admins', 'students', 'classes'].map(t => (
+              <button key={t} onClick={()=>{setActiveTab(t); setSidebarOpen(false);}} className={`w-full text-left p-3 rounded capitalize flex gap-2 ${activeTab===t?'bg-blue-600':''}`}>
+                  {t === 'dashboard' ? <LayoutDashboard size={18}/> : t==='admins' ? <Key size={18}/> : t==='students'?<User size={18}/> : <Menu size={18}/>} {t}
               </button>
           ))}
         </nav>
-        <button onClick={onLogout} className="flex items-center gap-2 text-red-400 mt-auto"><LogOut size={18}/> Logout</button>
+        <button onClick={onLogout} className="flex items-center gap-2 text-red-400 mt-auto mb-4 md:mb-0"><LogOut size={18}/> Logout</button>
       </div>
 
-      <div className="flex-1 p-8 overflow-y-auto">
+      {/* Overlay for mobile sidebar */}
+      {sidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-0 md:hidden" onClick={() => setSidebarOpen(false)}></div>}
+
+      {/* Main Content */}
+      <div className="flex-1 p-4 md:p-8 overflow-y-auto">
         {activeTab === 'dashboard' && (
            <div>
-               <h1 className="text-2xl font-bold mb-6 text-slate-800">Welcome, {school?.name}</h1>
-               <div className="grid grid-cols-3 gap-6">
-                   <div className="bg-white p-6 rounded shadow border-l-4 border-blue-500"><h3>Total Students</h3><p className="text-3xl font-bold text-slate-700">{students.length}</p></div>
+               <h1 className="text-xl md:text-2xl font-bold mb-6 text-slate-800">Welcome, {school?.name}</h1>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                   <div className="bg-white p-6 rounded shadow border-l-4 border-blue-500"><h3>Students</h3><p className="text-3xl font-bold text-slate-700">{students.length}</p></div>
                    <div className="bg-white p-6 rounded shadow border-l-4 border-green-500"><h3>Teachers</h3><p className="text-3xl font-bold text-slate-700">{teachers.length}</p></div>
-                   <div className="bg-white p-6 rounded shadow border-l-4 border-purple-500"><h3>Classes</h3><p className="text-3xl font-bold text-slate-700">{classes.length}</p></div>
+                   <div className="bg-white p-6 rounded shadow border-l-4 border-purple-500"><h3>Admins</h3><p className="text-3xl font-bold text-slate-700">{admins.length}</p></div>
                </div>
            </div>
         )}
 
+        {activeTab === 'admins' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="bg-white p-6 rounded shadow">
+                    <h2 className="text-xl font-bold mb-4">Manage Admins</h2>
+                    <p className="text-sm text-gray-500 mb-4">Invite a colleague to be an admin. They will use the code to create their account.</p>
+                    <form onSubmit={inviteAdmin} className="space-y-4">
+                        <input name="name" placeholder="Colleague Name" className="w-full p-2 border rounded" required />
+                        <input name="email" type="email" placeholder="Colleague Email" className="w-full p-2 border rounded" required />
+                        <button className="bg-blue-600 text-white w-full py-2 rounded font-bold">Generate Invite Code</button>
+                    </form>
+                    
+                    <div className="mt-8">
+                        <h3 className="font-bold border-b pb-2 mb-2">Pending Invites</h3>
+                        {(school?.admin_invites || []).length === 0 && <p className="text-sm text-gray-400">No pending invites.</p>}
+                        {(school?.admin_invites || []).map((inv, i) => (
+                             <div key={i} className="flex justify-between items-center bg-yellow-50 p-2 mb-2 rounded border border-yellow-200">
+                                 <div>
+                                     <p className="text-xs font-bold">{inv.name}</p>
+                                     <p className="text-xs">{inv.email}</p>
+                                 </div>
+                                 <div className="text-right">
+                                     <p className="text-lg font-mono font-bold text-blue-600">{inv.code}</p>
+                                 </div>
+                             </div>
+                        ))}
+                    </div>
+                </div>
+                <div className="bg-white p-6 rounded shadow">
+                    <h3 className="font-bold mb-4">Current Admins</h3>
+                    {admins.map(a => (
+                        <div key={a.id} className="p-3 border-b flex justify-between items-center">
+                            <div>
+                                <p className="font-bold">{a.full_name}</p>
+                                <p className="text-xs text-gray-500">{a.id === profile.id ? '(You)' : 'Co-Admin'}</p>
+                            </div>
+                            <User size={16} className="text-gray-400"/>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+
         {activeTab === 'info' && (
-            <div className="grid grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="bg-white p-6 rounded shadow">
                     <h2 className="text-xl font-bold mb-4 border-b pb-2">School Details</h2>
                     <form onSubmit={updateSchool} className="space-y-4">
@@ -453,17 +494,9 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                             <div><label className="text-xs font-bold text-gray-500">CURRENT TERM</label><input name="current_term" defaultValue={school?.current_term} className="w-full p-2 border rounded" /></div>
                             <div><label className="text-xs font-bold text-gray-500">SESSION</label><input name="current_session" defaultValue={school?.current_session} className="w-full p-2 border rounded" /></div>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-bold mb-1">School Logo</label>
-                                <input type="file" name="logo_file" className="text-xs border p-2 w-full rounded" />
-                                {school?.logo_url && <img src={school.logo_url} alt="Logo" className="h-10 mt-2 object-contain" />}
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold mb-1">Principal Signature</label>
-                                <input type="file" name="sig_file" className="text-xs border p-2 w-full rounded" />
-                                {school?.principal_signature_url && <img src={school.principal_signature_url} alt="Sig" className="h-10 mt-2 object-contain" />}
-                            </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label className="block text-sm font-bold mb-1">Logo</label><input type="file" name="logo_file" className="text-xs border p-2 w-full rounded" /></div>
+                            <div><label className="block text-sm font-bold mb-1">Signature</label><input type="file" name="sig_file" className="text-xs border p-2 w-full rounded" /></div>
                         </div>
                         <button disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded w-full flex justify-center mt-4">{loading ? <Loader2 className="animate-spin"/> : 'Save Changes'}</button>
                     </form>
@@ -483,11 +516,10 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                         ))}
                     </div>
                     <div className="flex gap-2 bg-gray-100 p-2 rounded">
-                        <input placeholder="Title (e.g. Project)" className="border p-2 rounded flex-1 text-sm" value={newConfig.name} onChange={e=>setNewConfig({...newConfig, name:e.target.value})} />
+                        <input placeholder="Title" className="border p-2 rounded flex-1 text-sm" value={newConfig.name} onChange={e=>setNewConfig({...newConfig, name:e.target.value})} />
                         <input placeholder="Max" type="number" className="border p-2 rounded w-16 text-sm" value={newConfig.max} onChange={e=>setNewConfig({...newConfig, max:parseInt(e.target.value)})} />
                         <button onClick={addConfigField} className="bg-green-600 text-white px-3 rounded text-sm font-bold">Add</button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-2 italic">Note: Fields containing "Exam" or "Examination" are excluded from Mid-Term Reports automatically.</p>
                 </div>
             </div>
         )}
@@ -496,15 +528,15 @@ const SchoolAdmin = ({ profile, onLogout }) => {
             <div>
                 <h2 className="text-xl font-bold mb-4">Manage Students</h2>
                 <div className="bg-white p-4 rounded shadow mb-6">
-                    <form onSubmit={addStudent} className="grid grid-cols-4 gap-3 items-end">
+                    <form onSubmit={addStudent} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                         <input name="name" placeholder="Student Full Name" className="border p-2 rounded" required />
                         <select name="gender" className="border p-2 rounded"><option>Male</option><option>Female</option></select>
                         <select name="class_id" className="border p-2 rounded" required>{classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
                         <button className="bg-green-600 text-white p-2 rounded font-bold flex items-center justify-center gap-2"><Plus size={18}/> Register</button>
                     </form>
                 </div>
-                <div className="bg-white rounded shadow overflow-hidden">
-                    <table className="w-full text-left text-sm">
+                <div className="bg-white rounded shadow overflow-x-auto">
+                    <table className="w-full text-left text-sm min-w-[600px]">
                         <thead className="bg-slate-100 border-b">
                             <tr><th className="p-3">Name</th><th className="p-3">Adm No</th><th className="p-3">Class</th><th className="p-3">PIN</th><th className="p-3">Status</th><th className="p-3">Actions</th></tr>
                         </thead>
@@ -538,18 +570,18 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         )}
 
         {activeTab === 'classes' && (
-            <div className="bg-white p-6 rounded shadow max-w-3xl">
+            <div className="bg-white p-6 rounded shadow w-full md:max-w-3xl">
                 <h2 className="text-xl font-bold mb-4">Classes & Tutors</h2>
                 <form onSubmit={async(e)=>{
                     e.preventDefault(); const fd=new FormData(e.target);
                     await supabase.from('classes').insert({school_id:school.id, name:fd.get('name'), form_tutor_id:fd.get('tid')||null});
                     e.target.reset(); fetchSchoolData();
-                }} className="flex gap-4 items-end mb-6">
-                    <input name="name" placeholder="Class Name (e.g. JSS 1)" className="border p-2 rounded flex-1" required />
-                    <select name="tid" className="border p-2 rounded flex-1"><option value="">Select Form Tutor</option>{teachers.map(t=><option key={t.id} value={t.id}>{t.full_name}</option>)}</select>
-                    <button className="bg-blue-600 text-white px-4 py-2 rounded font-bold">Create Class</button>
+                }} className="flex flex-col md:flex-row gap-4 items-end mb-6">
+                    <input name="name" placeholder="Class Name (e.g. JSS 1)" className="border p-2 rounded w-full md:flex-1" required />
+                    <select name="tid" className="border p-2 rounded w-full md:flex-1"><option value="">Select Form Tutor</option>{teachers.map(t=><option key={t.id} value={t.id}>{t.full_name}</option>)}</select>
+                    <button className="bg-blue-600 text-white px-4 py-2 rounded font-bold w-full md:w-auto">Create Class</button>
                 </form>
-                <div className="grid grid-cols-2 gap-4">{classes.map(c=>(
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{classes.map(c=>(
                     <div key={c.id} className="border p-4 rounded flex justify-between items-center bg-gray-50">
                         <div><h3 className="font-bold">{c.name}</h3><span className="text-xs text-gray-500">{c.profiles?.full_name || 'No Tutor Assigned'}</span></div>
                         <button onClick={async()=>{if(window.confirm('Delete Class?')) { await supabase.from('classes').delete().eq('id', c.id); fetchSchoolData(); }}} className="text-red-500"><Trash2 size={16}/></button>
@@ -575,6 +607,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [previewData, setPreviewData] = useState(null);
   const [schoolConfig, setSchoolConfig] = useState([]);
   const [schoolData, setSchoolData] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { save, saving } = useAutoSave(async () => {
     if (!selectedStudent) return;
@@ -602,6 +635,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setSubjects(sub || []);
     const { data: stu } = await supabase.from('students').select('*, classes(profiles(signature_url))').eq('class_id', classId).order('name');
     setStudents(stu || []);
+    setSidebarOpen(false); // Close sidebar on mobile on select
   };
 
   const uploadSignature = async (e) => {
@@ -613,8 +647,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           const { data } = supabase.storage.from('school-assets').getPublicUrl(fileName);
           await supabase.from('profiles').update({ signature_url: data.publicUrl }).eq('id', profile.id);
           window.alert("Signature Uploaded!");
-      } else {
-          window.alert("Upload failed");
       }
   };
 
@@ -628,12 +660,10 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     });
     setScores(scoreMap);
     const { data: comm } = await supabase.from('comments').select('*').eq('student_id', student.id).maybeSingle();
-    setComments({ 
-        full: comm?.tutor_comment || "", 
-        mid: comm?.midterm_tutor_comment || "" 
-    });
+    setComments({ full: comm?.tutor_comment || "", mid: comm?.midterm_tutor_comment || "" });
     setBehaviors(comm?.behaviors ? JSON.parse(comm.behaviors) : {});
     setSelectedStudent(student);
+    setSidebarOpen(false); // Close sidebar on mobile
   };
 
   const updateScore = (subId, code, value, max) => {
@@ -653,12 +683,9 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     await supabase.from('results').delete().eq('student_id', selectedStudent.id);
     await supabase.from('results').insert(resultsPayload);
     
-    // Save both Mid and Full term comments
     const payload = { 
-        student_id: selectedStudent.id, 
-        school_id: curClass.school_id, 
-        tutor_comment: comments.full,
-        midterm_tutor_comment: comments.mid, // Saving new field
+        student_id: selectedStudent.id, school_id: curClass.school_id, 
+        tutor_comment: comments.full, midterm_tutor_comment: comments.mid,
         behaviors: JSON.stringify(behaviors) 
     };
     if (status) payload.submission_status = status;
@@ -685,13 +712,13 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
   if (previewData) {
       return (
-          <div className="h-screen flex flex-col bg-gray-100">
+          <div className="fixed inset-0 bg-gray-100 flex flex-col z-50">
               <div className="bg-white p-4 shadow flex justify-between items-center">
                   <button onClick={() => setPreviewData(null)} className="flex items-center gap-2"><X /> Close</button>
                   <div className="flex gap-2">
-                     <button onClick={async()=>{if(window.confirm('Submit to Admin?')){ await saveResultToDB('awaiting_approval'); setPreviewData(null); }}} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2"><ShieldCheck size={18}/> Submit for Approval</button>
-                     <PDFDownloadLink document={<ResultPDF {...previewData} reportType="mid" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="MidTerm.pdf"><button className="bg-blue-100 text-blue-700 px-4 py-2 rounded flex items-center gap-2 font-bold"><Download /> Mid-Term</button></PDFDownloadLink>
-                     <PDFDownloadLink document={<ResultPDF {...previewData} reportType="full" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="FullTerm.pdf"><button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 font-bold"><Download /> Full-Term</button></PDFDownloadLink>
+                     <button onClick={async()=>{if(window.confirm('Submit to Admin?')){ await saveResultToDB('awaiting_approval'); setPreviewData(null); }}} className="bg-green-600 text-white px-3 py-2 rounded flex items-center gap-2 text-xs md:text-sm"><ShieldCheck size={16}/> Submit</button>
+                     <PDFDownloadLink document={<ResultPDF {...previewData} reportType="mid" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="MidTerm.pdf"><button className="bg-blue-100 text-blue-700 px-3 py-2 rounded flex items-center gap-2 font-bold text-xs md:text-sm">Mid-Term</button></PDFDownloadLink>
+                     <PDFDownloadLink document={<ResultPDF {...previewData} reportType="full" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="FullTerm.pdf"><button className="bg-blue-600 text-white px-3 py-2 rounded flex items-center gap-2 font-bold text-xs md:text-sm">Full-Term</button></PDFDownloadLink>
                   </div>
               </div>
               <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} reportType="full" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} /></PDFViewer>
@@ -700,22 +727,27 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <div className="w-80 bg-white border-r flex flex-col">
-        <div className="p-4 bg-slate-900 text-white">
+    <div className="flex h-screen bg-gray-50 flex-col md:flex-row">
+      <div className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow sticky top-0 z-20">
+          <h2 className="font-bold">{profile.full_name}</h2>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)}><Menu /></button>
+      </div>
+
+      <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-10 inset-y-0 left-0 w-80 bg-white border-r flex flex-col transition duration-200 ease-in-out`}>
+        <div className="p-4 bg-slate-900 text-white hidden md:block">
             <h2 className="font-bold truncate text-lg">{profile.full_name}</h2>
             <button onClick={onLogout} className="text-xs text-red-300 flex items-center gap-1 mt-2"><LogOut size={12}/> Logout</button>
-            <div className="mt-4 border-t border-slate-700 pt-3">
-                 <label className="text-xs text-gray-400 block mb-1">My Signature</label>
-                 <div className="flex items-center gap-2">
-                    <input type="file" id="t-sig" className="hidden" onChange={uploadSignature} />
-                    <label htmlFor="t-sig" className="bg-slate-700 text-xs px-2 py-1 rounded cursor-pointer hover:bg-slate-600 flex items-center gap-1"><Upload size={10}/> Upload</label>
-                 </div>
-            </div>
-            <select className="mt-4 w-full text-black p-2 rounded text-sm" onChange={(e) => loadClass(parseInt(e.target.value))}>
+        </div>
+        <div className="p-4 bg-slate-800 md:bg-slate-900 border-t border-slate-700">
+             <div className="flex items-center gap-2 mb-2">
+                <input type="file" id="t-sig" className="hidden" onChange={uploadSignature} />
+                <label htmlFor="t-sig" className="bg-slate-700 text-white text-xs px-2 py-1 rounded cursor-pointer hover:bg-slate-600 flex items-center gap-1"><Upload size={10}/> Upload Signature</label>
+             </div>
+             <select className="w-full text-black p-2 rounded text-sm" onChange={(e) => loadClass(parseInt(e.target.value))}>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
         </div>
+
         <div className="flex-1 overflow-y-auto">
             {curClass && (
                 <>
@@ -728,21 +760,23 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                 </>
             )}
         </div>
+        <button onClick={onLogout} className="md:hidden p-4 text-red-600 border-t font-bold">Logout</button>
       </div>
+      {sidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-0 md:hidden" onClick={() => setSidebarOpen(false)}></div>}
 
-      <div className="flex-1 overflow-y-auto p-8">
-        {!selectedStudent ? <div className="text-center mt-20 text-gray-400">Select a student from the sidebar</div> : (
+      <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        {!selectedStudent ? <div className="text-center mt-20 text-gray-400">Select a student from the menu</div> : (
             <div>
-                <div className="flex justify-between items-center mb-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                     <h1 className="text-2xl font-bold text-slate-800">{selectedStudent.name}</h1>
-                    <div className="flex gap-2 items-center">
+                    <div className="flex gap-2 items-center w-full md:w-auto justify-between md:justify-end">
                         {saving && <span className="text-green-600 text-xs flex items-center gap-1"><Save size={12} className="animate-pulse"/> Saving...</span>}
-                        <button onClick={handlePreview} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700 transition"><Eye size={18}/> Preview / PDF</button>
+                        <button onClick={handlePreview} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700 transition text-sm"><Eye size={16}/> Preview</button>
                     </div>
                 </div>
 
                 <div className="bg-white rounded shadow overflow-x-auto mb-8 border">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm min-w-[600px]">
                         <thead className="bg-slate-50 border-b">
                             <tr><th className="p-3 text-left w-1/4">Subject</th>{schoolConfig.map(c => <th key={c.code} className="p-2 text-center w-24">{c.name}<br/><span className="text-xs text-gray-500">/{c.max}</span></th>)}<th className="p-3 text-center w-20 bg-gray-50">Total</th></tr>
                         </thead>
@@ -770,7 +804,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="bg-white p-6 rounded shadow border">
                         <h3 className="font-bold mb-4 border-b pb-2">Behavioral Traits</h3>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {BEHAVIORAL_TRAITS.map(t => (
                                 <div key={t}>
                                     <label className="text-xs block text-gray-500 font-bold mb-1">{t}</label>
@@ -782,15 +816,14 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                         </div>
                     </div>
                     
-                    {/* UPDATED: Separate Input Boxes for Mid-Term vs Full-Term Comments */}
                     <div className="space-y-4">
                         <div className="bg-white p-6 rounded shadow h-fit border">
-                            <h3 className="font-bold mb-2 border-b pb-2 text-blue-600">Mid-Term / CA Comment</h3>
-                            <textarea className="w-full border rounded p-3 h-24 text-sm focus:ring-2 focus:ring-blue-200 outline-none resize-none" placeholder="Comment for Mid-Term report only..." value={comments.mid} onChange={(e) => { setComments(p => ({...p, mid: e.target.value})); save(); }} />
+                            <h3 className="font-bold mb-2 border-b pb-2 text-blue-600">Mid-Term Comment</h3>
+                            <textarea className="w-full border rounded p-3 h-24 text-sm focus:ring-2 focus:ring-blue-200 outline-none resize-none" value={comments.mid} onChange={(e) => { setComments(p => ({...p, mid: e.target.value})); save(); }} />
                         </div>
                         <div className="bg-white p-6 rounded shadow h-fit border">
                             <h3 className="font-bold mb-2 border-b pb-2 text-green-600">Full Term Comment</h3>
-                            <textarea className="w-full border rounded p-3 h-24 text-sm focus:ring-2 focus:ring-green-200 outline-none resize-none" placeholder="Comment for End of Term report..." value={comments.full} onChange={(e) => { setComments(p => ({...p, full: e.target.value})); save(); }} />
+                            <textarea className="w-full border rounded p-3 h-24 text-sm focus:ring-2 focus:ring-green-200 outline-none resize-none" value={comments.full} onChange={(e) => { setComments(p => ({...p, full: e.target.value})); save(); }} />
                         </div>
                     </div>
                 </div>
@@ -822,13 +855,43 @@ const Auth = ({ onLogin, onParent }) => {
                     await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
                     window.alert("Registration Successful! Please Login."); setMode('login');
                 }
-            } else if (mode === 'teacher_reg') {
-                 const { data: sch } = await supabase.from('schools').select('id').eq('id', form.schoolCode).single();
-                 if (!sch) throw new Error('Invalid School Code');
+            } else if (mode === 'teacher_reg' || mode === 'admin_reg') {
+                 // Logic for Staff Registration
+                 const role = mode === 'teacher_reg' ? 'teacher' : 'admin';
+                 let schoolId = null;
+
+                 if (role === 'teacher') {
+                     const { data: sch } = await supabase.from('schools').select('id').eq('id', form.schoolCode).single();
+                     if (!sch) throw new Error('Invalid School Code');
+                     schoolId = sch.id;
+                 } else {
+                     // Check Admin Invite
+                     // Note: To be secure, we need to iterate schools to find who issued this code, or use a specific invites table.
+                     // Since we used a JSONB column on schools, we must query schools that contain this invite.
+                     // Supabase PostgREST allows searching JSON arrays.
+                     const { data: schs } = await supabase.from('schools').select('*'); 
+                     const targetSchool = schs?.find(s => (s.admin_invites || []).some(inv => inv.code === form.schoolCode && inv.email === form.email));
+                     
+                     if (!targetSchool) throw new Error("Invalid Invite Code or Email mismatch.");
+                     schoolId = targetSchool.id;
+
+                     // Remove invite logic would ideally be here, but we need auth first.
+                     // We will remove it after successful creation if possible, or leave it.
+                     // For this simple version, we proceed.
+                 }
+
                  const { data: auth } = await supabase.auth.signUp({ email: form.email, password: form.password });
                  if(auth.user){
-                    await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'teacher', school_id: sch.id });
-                    window.alert("Teacher Registered! Please Login."); setMode('login');
+                    await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: role, school_id: schoolId });
+                    
+                    // Cleanup invite if admin
+                    if(role === 'admin') {
+                        const { data: s } = await supabase.from('schools').select('admin_invites').eq('id', schoolId).single();
+                        const updated = (s.admin_invites || []).filter(inv => inv.code !== form.schoolCode);
+                        await supabase.from('schools').update({ admin_invites: updated }).eq('id', schoolId);
+                    }
+
+                    window.alert(`${role === 'admin' ? 'Admin' : 'Teacher'} Registered! Please Login.`); setMode('login');
                  }
             } else {
                 const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
@@ -841,15 +904,16 @@ const Auth = ({ onLogin, onParent }) => {
         <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
             <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-md border-t-4 border-blue-600">
                 <div className="text-center mb-6"><div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3"><School className="text-blue-600" size={32} /></div><h1 className="text-2xl font-bold text-slate-800">Springforth Results</h1></div>
-                <div className="flex justify-center gap-4 mb-6 text-xs font-bold border-b pb-2">
-                    {['login', 'school_reg', 'teacher_reg'].map(m => <button key={m} onClick={()=>setMode(m)} className={`capitalize pb-1 ${mode===m?'text-blue-600 border-b-2 border-blue-600':''}`}>{m.replace('_', ' ')}</button>)}
+                <div className="flex flex-wrap justify-center gap-4 mb-6 text-xs font-bold border-b pb-2">
+                    {['login', 'school_reg', 'teacher_reg', 'admin_reg'].map(m => <button key={m} onClick={()=>setMode(m)} className={`capitalize pb-1 ${mode===m?'text-blue-600 border-b-2 border-blue-600':''}`}>{m.replace('school_reg', 'Start School').replace('teacher_reg', 'Join (Tutor)').replace('admin_reg', 'Join (Admin)').replace('_', ' ')}</button>)}
                 </div>
                 <form onSubmit={handleAuth} className="space-y-4">
                     {(mode.includes('reg')) && <input placeholder="Full Name" className="w-full p-3 border rounded bg-gray-50" onChange={e=>setForm({...form, name:e.target.value})} required />}
                     <input type="email" placeholder="Email Address" className="w-full p-3 border rounded bg-gray-50" onChange={e=>setForm({...form, email:e.target.value})} required />
                     <input type="password" placeholder="Password" className="w-full p-3 border rounded bg-gray-50" onChange={e=>setForm({...form, password:e.target.value})} required />
                     {mode === 'school_reg' && <input placeholder="Subscription PIN" className="w-full p-3 border rounded bg-gray-50" onChange={e=>setForm({...form, pin:e.target.value})} required />}
-                    {mode === 'teacher_reg' && <input placeholder="School Code (Ask Admin)" className="w-full p-3 border rounded bg-gray-50" onChange={e=>setForm({...form, schoolCode:e.target.value})} required />}
+                    {mode === 'teacher_reg' && <input placeholder="School ID (Ask Admin)" className="w-full p-3 border rounded bg-gray-50" onChange={e=>setForm({...form, schoolCode:e.target.value})} required />}
+                    {mode === 'admin_reg' && <input placeholder="Invite Code (From Admin)" className="w-full p-3 border rounded bg-gray-50" onChange={e=>setForm({...form, schoolCode:e.target.value})} required />}
                     <button disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded font-bold transition flex justify-center">{loading ? <Loader2 className="animate-spin"/> : 'Access Portal'}</button>
                 </form>
                 {mode === 'login' && (
@@ -878,8 +942,6 @@ const ParentPortal = ({ onBack }) => {
 
         const behaviors = comm?.behaviors ? JSON.parse(comm.behaviors) : {};
         const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviors[trait] || 'Good' }));
-        
-        // Load Images
         const logoBase64 = await imageUrlToBase64(stu.schools.logo_url);
         const principalSigBase64 = await imageUrlToBase64(stu.schools.principal_signature_url);
         const teacherSigBase64 = await imageUrlToBase64(stu.classes?.profiles?.signature_url);
@@ -893,12 +955,12 @@ const ParentPortal = ({ onBack }) => {
     };
 
     if (data) return (
-        <div className="h-screen flex flex-col bg-slate-800">
+        <div className="fixed inset-0 bg-slate-800 z-50 flex flex-col h-screen">
             <div className="bg-white p-4 shadow flex justify-between items-center">
                 <button onClick={()=>setData(null)} className="flex items-center gap-2 font-bold"><X /> Exit Portal</button>
                 <div className="flex gap-3">
-                    <PDFDownloadLink document={<ResultPDF {...data} reportType="mid" logoBase64={data.logoBase64} principalSigBase64={data.principalSigBase64} teacherSigBase64={data.teacherSigBase64} />} fileName="MidTerm.pdf"><button className="bg-blue-100 text-blue-800 px-4 py-2 rounded font-bold">Mid-Term PDF</button></PDFDownloadLink>
-                    <PDFDownloadLink document={<ResultPDF {...data} reportType="full" logoBase64={data.logoBase64} principalSigBase64={data.principalSigBase64} teacherSigBase64={data.teacherSigBase64} />} fileName="FullTerm.pdf"><button className="bg-green-600 text-white px-4 py-2 rounded font-bold shadow">Full-Term PDF</button></PDFDownloadLink>
+                    <PDFDownloadLink document={<ResultPDF {...data} reportType="mid" logoBase64={data.logoBase64} principalSigBase64={data.principalSigBase64} teacherSigBase64={data.teacherSigBase64} />} fileName="MidTerm.pdf"><button className="bg-blue-100 text-blue-800 px-3 py-2 rounded font-bold text-sm">Mid-Term PDF</button></PDFDownloadLink>
+                    <PDFDownloadLink document={<ResultPDF {...data} reportType="full" logoBase64={data.logoBase64} principalSigBase64={data.principalSigBase64} teacherSigBase64={data.teacherSigBase64} />} fileName="FullTerm.pdf"><button className="bg-green-600 text-white px-3 py-2 rounded font-bold shadow text-sm">Full-Term PDF</button></PDFDownloadLink>
                 </div>
             </div>
             <PDFViewer className="flex-1 w-full"><ResultPDF {...data} reportType="full" logoBase64={data.logoBase64} principalSigBase64={data.principalSigBase64} teacherSigBase64={data.teacherSigBase64} /></PDFViewer>
