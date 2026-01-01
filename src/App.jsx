@@ -552,6 +552,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
 };
 
 // ==================== TEACHER DASHBOARD ====================
+// ==================== TEACHER DASHBOARD ====================
 const TeacherDashboard = ({ profile, onLogout }) => {
   const [classes, setClasses] = useState([]);
   const [curClass, setCurClass] = useState(null);
@@ -565,7 +566,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [schoolConfig, setSchoolConfig] = useState([]);
   const [schoolData, setSchoolData] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showAddStudent, setShowAddStudent] = useState(false);
+  const [showAddStudent, setShowAddStudent] = useState(false); // Controls registration form visibility
 
   const { save, saving } = useAutoSave(async () => {
     if (!selectedStudent) return;
@@ -574,6 +575,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
   useEffect(() => {
     const init = async () => {
+        // Fetch classes assigned to this teacher
         const { data: cls } = await supabase.from('classes').select('*, schools(*)').eq('form_tutor_id', profile.id);
         setClasses(cls || []);
         if (cls?.[0]) {
@@ -589,6 +591,8 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     const cls = classes.find(c => c.id === classId);
     setCurClass(cls);
     setSelectedStudent(null);
+    setShowAddStudent(false);
+    
     const { data: sub } = await supabase.from('subjects').select('*').eq('class_id', classId);
     setSubjects(sub || []);
     const { data: stu } = await supabase.from('students').select('*, classes(profiles(signature_url))').eq('class_id', classId).order('name');
@@ -600,6 +604,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     const fd = new FormData(e.target);
     const pin = generatePIN();
     const adm = generateAdmissionNumber();
+    
     const { error } = await supabase.from('students').insert({
         school_id: schoolData.id,
         class_id: curClass.id,
@@ -608,12 +613,14 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         admission_no: adm,
         parent_pin: pin
     });
-    if (error) alert(error.message);
-    else {
-        alert(`Student Registered!\nAdm No: ${adm}\nPIN: ${pin}`);
+
+    if (error) {
+        alert("Registration Error: " + error.message);
+    } else {
+        alert(`Successfully Registered!\nStudent: ${fd.get('name')}\nAdm No: ${adm}\nParent PIN: ${pin}`);
         e.target.reset();
         setShowAddStudent(false);
-        loadClass(curClass.id);
+        loadClass(curClass.id); // Refresh list
     }
   };
 
@@ -630,6 +637,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   };
 
   const loadStudentData = async (student) => {
+    setShowAddStudent(false); // Hide reg form when viewing a student
     setSelectedStudent(null);
     const { data: res } = await supabase.from('results').select('*, subjects(*)').eq('student_id', student.id);
     const scoreMap = {};
@@ -643,7 +651,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setBehaviors(comm?.behaviors ? JSON.parse(comm.behaviors) : {});
     setSelectedStudent(student);
     setSidebarOpen(false); 
-    setShowAddStudent(false);
   };
 
   const updateScore = (subId, code, value, max) => {
@@ -676,7 +683,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     await saveResultToDB();
     const { data: results } = await supabase.from('results').select('*, subjects(*)').eq('student_id', selectedStudent.id);
     const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviors[trait] || 'Good' }));
-    
     const logoBase64 = await imageUrlToBase64(schoolData.logo_url);
     const principalSigBase64 = await imageUrlToBase64(schoolData.principal_signature_url);
     const { data: teacherProfile } = await supabase.from('profiles').select('signature_url').eq('id', profile.id).single();
@@ -693,11 +699,11 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       return (
           <div className="fixed inset-0 bg-gray-100 flex flex-col z-50">
               <div className="bg-white p-4 shadow flex justify-between items-center">
-                  <button onClick={() => setPreviewData(null)} className="flex items-center gap-2"><X /> Close</button>
+                  <button onClick={() => setPreviewData(null)} className="flex items-center gap-2 font-bold"><X /> Back</button>
                   <div className="flex gap-2">
-                     <button onClick={async()=>{if(window.confirm('Submit to Admin?')){ await saveResultToDB('awaiting_approval'); setPreviewData(null); }}} className="bg-green-600 text-white px-3 py-2 rounded flex items-center gap-2 text-xs md:text-sm"><ShieldCheck size={16}/> Submit</button>
-                     <PDFDownloadLink document={<ResultPDF {...previewData} reportType="mid" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="MidTerm.pdf"><button className="bg-blue-100 text-blue-700 px-3 py-2 rounded flex items-center gap-2 font-bold text-xs md:text-sm">Mid-Term</button></PDFDownloadLink>
-                     <PDFDownloadLink document={<ResultPDF {...previewData} reportType="full" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="FullTerm.pdf"><button className="bg-blue-600 text-white px-3 py-2 rounded flex items-center gap-2 font-bold text-xs md:text-sm">Full-Term</button></PDFDownloadLink>
+                     <button onClick={async()=>{if(window.confirm('Submit to Admin for Approval?')){ await saveResultToDB('awaiting_approval'); setPreviewData(null); }}} className="bg-green-600 text-white px-3 py-2 rounded flex items-center gap-2 text-xs md:text-sm"><ShieldCheck size={16}/> Final Submit</button>
+                     <PDFDownloadLink document={<ResultPDF {...previewData} reportType="mid" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="MidTerm.pdf"><button className="bg-blue-100 text-blue-700 px-3 py-2 rounded font-bold text-xs md:text-sm">Mid-Term</button></PDFDownloadLink>
+                     <PDFDownloadLink document={<ResultPDF {...previewData} reportType="full" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} />} fileName="FullTerm.pdf"><button className="bg-blue-600 text-white px-3 py-2 rounded font-bold text-xs md:text-sm">Full-Term</button></PDFDownloadLink>
                   </div>
               </div>
               <PDFViewer className="flex-1 w-full"><ResultPDF {...previewData} reportType="full" logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} /></PDFViewer>
@@ -706,124 +712,242 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 flex-col md:flex-row">
+    <div className="flex h-screen bg-gray-50 flex-col md:flex-row overflow-hidden">
+      {/* Mobile Top Nav */}
       <div className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow sticky top-0 z-20">
           <h2 className="font-bold">{profile.full_name}</h2>
           <button onClick={() => setSidebarOpen(!sidebarOpen)}><Menu /></button>
       </div>
 
-      <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-10 inset-y-0 left-0 w-80 bg-white border-r flex flex-col transition duration-200 ease-in-out`}>
+      {/* Sidebar */}
+      <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-30 inset-y-0 left-0 w-80 bg-white border-r flex flex-col transition duration-200 ease-in-out`}>
         <div className="p-4 bg-slate-900 text-white hidden md:block">
             <h2 className="font-bold truncate text-lg">{profile.full_name}</h2>
-            <button onClick={onLogout} className="text-xs text-red-300 flex items-center gap-1 mt-2"><LogOut size={12}/> Logout</button>
+            <div className="text-[10px] text-slate-400 uppercase tracking-widest mt-1">Form Tutor Dashboard</div>
         </div>
-        <div className="p-4 bg-slate-800 md:bg-slate-900 border-t border-slate-700">
+
+        <div className="p-4 bg-slate-100 border-b">
              <div className="flex items-center gap-2 mb-4">
-                <input type="file" id="t-sig" className="hidden" onChange={uploadSignature} />
-                <label htmlFor="t-sig" className="bg-slate-700 text-white text-xs px-2 py-1 rounded cursor-pointer hover:bg-slate-600 flex items-center gap-1"><Upload size={10}/> Sign</label>
-                <div className="text-[10px] text-gray-400">Class: {curClass?.name}</div>
+                <input type="file" id="t-sig-btn" className="hidden" onChange={uploadSignature} />
+                <label htmlFor="t-sig-btn" className="bg-white border border-slate-300 text-slate-700 text-xs px-3 py-1.5 rounded-full cursor-pointer hover:bg-gray-50 flex items-center gap-1 shadow-sm"><Upload size={12}/> My Signature</label>
+                <button onClick={onLogout} className="text-red-500 ml-auto"><LogOut size={16}/></button>
              </div>
-             <button onClick={() => { setShowAddStudent(true); setSelectedStudent(null); }} className="w-full bg-blue-600 text-white py-2 rounded text-sm font-bold flex items-center justify-center gap-2 mb-2">
-                 <UserPlus size={16}/> Add New Student
-             </button>
+             
+             <label className="text-[10px] font-bold text-gray-500 mb-1 block uppercase">Active Class</label>
+             <select className="w-full text-black p-2 rounded border bg-white shadow-sm text-sm mb-4" onChange={(e) => loadClass(parseInt(e.target.value))}>
+                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+
+            <button 
+                onClick={() => { setShowAddStudent(true); setSelectedStudent(null); setSidebarOpen(false); }} 
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded shadow-md text-sm font-bold flex items-center justify-center gap-2"
+            >
+                 <UserPlus size={18}/> Register New Student
+            </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-            {curClass && (
+            {curClass ? (
                 <>
-                <div className="p-3 bg-gray-100 font-bold text-xs flex justify-between border-b"><span>SUBJECTS</span><button onClick={async()=>{const n=window.prompt('Subject Name:'); if(n){await supabase.from('subjects').insert({class_id:curClass.id,name:n}); loadClass(curClass.id);}}}><Plus size={16}/></button></div>
-                <div className="p-2 flex flex-wrap gap-2 border-b">{subjects.map(s => (<span key={s.id} className="bg-blue-50 text-blue-800 text-[10px] px-2 py-1 rounded flex gap-1 border border-blue-200">{s.name} <button onClick={async()=>{if(window.confirm('Del?')) {await supabase.from('subjects').delete().eq('id', s.id); loadClass(curClass.id);}}} className="text-red-500">×</button></span>))}</div>
-                <div className="p-3 bg-gray-100 font-bold text-xs border-b">MY STUDENTS ({students.length})</div>
+                <div className="p-3 bg-gray-50 font-bold text-[10px] text-gray-400 flex justify-between items-center border-b tracking-widest uppercase">
+                    <span>MY SUBJECTS</span>
+                    <button onClick={async()=>{const n=window.prompt('New Subject Name:'); if(n){await supabase.from('subjects').insert({class_id:curClass.id,name:n}); loadClass(curClass.id);}}} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Plus size={16}/></button>
+                </div>
+                <div className="p-2 flex flex-wrap gap-2 border-b bg-white">
+                    {subjects.map(s => (<span key={s.id} className="bg-slate-100 text-slate-700 text-[10px] px-2 py-1 rounded-md flex items-center gap-1 border">
+                        {s.name} 
+                        <button onClick={async()=>{if(window.confirm('Delete Subject?')) {await supabase.from('subjects').delete().eq('id', s.id); loadClass(curClass.id);}}} className="text-red-400 hover:text-red-600">×</button>
+                    </span>))}
+                    {subjects.length === 0 && <p className="text-[10px] text-gray-400 italic p-1">No subjects added yet.</p>}
+                </div>
+
+                <div className="p-3 bg-gray-50 font-bold text-[10px] text-gray-400 border-b tracking-widest uppercase">MY STUDENTS ({students.length})</div>
                 {students.map(s => (
-                    <div key={s.id} onClick={() => loadStudentData(s)} className={`p-3 border-b cursor-pointer hover:bg-gray-50 text-sm flex justify-between items-center ${selectedStudent?.id === s.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''}`}>
-                        <span>{s.name}</span>
-                        <button onClick={async(e)=>{e.stopPropagation(); if(window.confirm('Delete Student?')){await supabase.from('students').delete().eq('id',s.id); loadClass(curClass.id);}}} className="text-gray-300 hover:text-red-500"><Trash2 size={14}/></button>
+                    <div 
+                        key={s.id} 
+                        onClick={() => loadStudentData(s)} 
+                        className={`p-3 border-b cursor-pointer transition-colors flex justify-between items-center text-sm ${selectedStudent?.id === s.id ? 'bg-blue-600 text-white' : 'hover:bg-gray-50 text-slate-700'}`}
+                    >
+                        <span className="font-medium">{s.name}</span>
+                        <div className="flex items-center gap-2">
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded ${selectedStudent?.id === s.id ? 'bg-blue-500' : 'bg-gray-200 text-gray-600'}`}>{s.admission_no}</span>
+                            <button onClick={async(e)=>{e.stopPropagation(); if(window.confirm(`Delete ${s.name}?`)){await supabase.from('students').delete().eq('id',s.id); loadClass(curClass.id);}}} className={`${selectedStudent?.id === s.id ? 'text-blue-200' : 'text-gray-300'} hover:text-red-500`}><Trash2 size={14}/></button>
+                        </div>
                     </div>
                 ))}
                 </>
+            ) : (
+                <div className="p-8 text-center text-gray-400 text-sm italic">You are not assigned to any class as a Form Tutor. Contact Admin.</div>
             )}
         </div>
       </div>
       
-      {sidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-0 md:hidden" onClick={() => setSidebarOpen(false)}></div>}
+      {/* Overlay for mobile sidebar */}
+      {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setSidebarOpen(false)}></div>}
 
+      {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
         {showAddStudent ? (
-            <div className="max-w-md mx-auto bg-white p-8 rounded shadow">
-                <h2 className="text-2xl font-bold mb-4">Register New Student</h2>
-                <form onSubmit={registerStudent} className="space-y-4">
-                    <div><label className="text-xs font-bold text-gray-500">FULL NAME</label><input name="name" className="w-full border p-2 rounded" required /></div>
-                    <div><label className="text-xs font-bold text-gray-500">GENDER</label><select name="gender" className="w-full border p-2 rounded"><option>Male</option><option>Female</option></select></div>
-                    <div className="flex gap-2 pt-4">
-                        <button type="submit" className="flex-1 bg-green-600 text-white py-2 rounded font-bold">Register Student</button>
-                        <button type="button" onClick={()=>setShowAddStudent(false)} className="flex-1 bg-gray-100 py-2 rounded font-bold">Cancel</button>
+            <div className="max-w-xl mx-auto mt-10">
+                <div className="bg-white rounded-xl shadow-lg border-t-4 border-blue-600 overflow-hidden">
+                    <div className="p-6 border-b bg-gray-50 flex justify-between items-center">
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-800">New Student Registration</h2>
+                            <p className="text-sm text-gray-500">Registering into {curClass?.name}</p>
+                        </div>
+                        <button onClick={()=>setShowAddStudent(false)} className="text-gray-400 hover:text-gray-600"><X /></button>
                     </div>
-                </form>
+                    <form onSubmit={registerStudent} className="p-8 space-y-5">
+                        <div className="grid grid-cols-1 gap-5">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Student Full Name</label>
+                                <input name="name" placeholder="e.g. John Doe" className="w-full border-2 border-gray-100 p-3 rounded-lg focus:border-blue-400 outline-none transition" required />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Gender</label>
+                                <select name="gender" className="w-full border-2 border-gray-100 p-3 rounded-lg focus:border-blue-400 outline-none transition">
+                                    <option>Male</option>
+                                    <option>Female</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex gap-3 pt-6">
+                            <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold shadow-lg transition transform active:scale-95">Complete Registration</button>
+                            <button type="button" onClick={()=>setShowAddStudent(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-slate-600 py-3 rounded-lg font-bold transition">Cancel</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         ) : !selectedStudent ? (
-            <div className="text-center mt-20 text-gray-400">
-                <div className="bg-blue-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"><Users size={40} className="text-blue-200"/></div>
-                <p>Select a student from the menu or register a new one.</p>
+            <div className="h-full flex flex-col items-center justify-center text-center text-gray-400">
+                <div className="bg-white p-12 rounded-3xl shadow-sm border border-dashed border-gray-200">
+                    <div className="bg-blue-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <Users size={48} className="text-blue-300"/>
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-700 mb-2">Class Portal: {curClass?.name}</h2>
+                    <p className="max-w-xs mx-auto mb-8">Select a student from the sidebar to record scores, or register a new one to get started.</p>
+                    <button 
+                        onClick={() => setShowAddStudent(true)} 
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-bold shadow-lg transition-all flex items-center gap-2 mx-auto"
+                    >
+                        <UserPlus size={20}/> Add Your First Student
+                    </button>
+                </div>
             </div>
         ) : (
-            <div>
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                    <h1 className="text-2xl font-bold text-slate-800">{selectedStudent.name}</h1>
-                    <div className="flex gap-2 items-center w-full md:w-auto justify-between md:justify-end">
-                        {saving && <span className="text-green-600 text-xs flex items-center gap-1"><Save size={12} className="animate-pulse"/> Saving...</span>}
-                        <button onClick={handlePreview} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700 transition text-sm"><Eye size={16}/> Preview & Send</button>
+            <div className="max-w-6xl mx-auto">
+                {/* Grading UI Header */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white p-6 rounded-xl shadow-sm border">
+                    <div>
+                        <h1 className="text-3xl font-black text-slate-800">{selectedStudent.name}</h1>
+                        <p className="text-sm text-blue-600 font-mono">Admission: {selectedStudent.admission_no}</p>
+                    </div>
+                    <div className="flex gap-3 items-center w-full md:w-auto">
+                        {saving && (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-green-50 text-green-600 rounded-full text-xs font-bold border border-green-100">
+                                <Save size={14} className="animate-pulse"/> Auto-saving
+                            </div>
+                        )}
+                        <button onClick={handlePreview} className="bg-slate-900 text-white px-6 py-2.5 rounded-lg flex items-center gap-2 hover:bg-slate-800 transition shadow-md font-bold text-sm">
+                            <Eye size={18}/> Preview & Generate PDF
+                        </button>
                     </div>
                 </div>
 
-                <div className="bg-white rounded shadow overflow-x-auto mb-8 border">
-                    <table className="w-full text-sm min-w-[600px]">
-                        <thead className="bg-slate-50 border-b">
-                            <tr><th className="p-3 text-left w-1/4">Subject</th>{schoolConfig.map(c => <th key={c.code} className="p-2 text-center w-24">{c.name}<br/><span className="text-xs text-gray-500">/{c.max}</span></th>)}<th className="p-3 text-center w-20 bg-gray-50">Total</th></tr>
-                        </thead>
-                        <tbody>
-                            {subjects.map(s => {
-                                let total = 0; schoolConfig.forEach(c => total += (scores[s.id]?.[c.code] || 0));
-                                return (
-                                    <tr key={s.id} className="border-b hover:bg-slate-50">
-                                        <td className="p-3 font-medium">{s.name}</td>
-                                        {schoolConfig.map(c => (
-                                            <td key={c.code} className="p-2 text-center">
-                                                <input type="number" className="w-16 text-center border rounded p-1 focus:ring-2 focus:ring-blue-200 outline-none" 
-                                                    value={scores[s.id]?.[c.code] || ''} onChange={(e) => updateScore(s.id, c.code, e.target.value, c.max)} 
-                                                />
-                                            </td>
-                                        ))}
-                                        <td className="p-3 text-center font-bold bg-gray-50">{total}</td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                {/* Subject Scores Table */}
+                <div className="bg-white rounded-xl shadow-sm overflow-hidden border mb-8">
+                    <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
+                        <span className="font-bold text-slate-700">Academic Records</span>
+                        <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded font-black uppercase">Term: {schoolData?.current_term}</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-white border-b">
+                                <tr>
+                                    <th className="p-4 text-left font-bold text-slate-500 uppercase text-[10px] tracking-wider">Subject Name</th>
+                                    {schoolConfig.map(c => (
+                                        <th key={c.code} className="p-4 text-center w-28">
+                                            <span className="block text-[10px] text-slate-400 uppercase tracking-widest">{c.name}</span>
+                                            <span className="text-xs font-bold text-slate-700">Max: {c.max}</span>
+                                        </th>
+                                    ))}
+                                    <th className="p-4 text-center w-24 bg-slate-50 font-black text-slate-800">TOTAL</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {subjects.map(s => {
+                                    let total = 0; 
+                                    schoolConfig.forEach(c => total += (scores[s.id]?.[c.code] || 0));
+                                    return (
+                                        <tr key={s.id} className="border-b hover:bg-blue-50/30 transition-colors">
+                                            <td className="p-4 font-bold text-slate-700">{s.name}</td>
+                                            {schoolConfig.map(c => (
+                                                <td key={c.code} className="p-4 text-center">
+                                                    <input 
+                                                        type="number" 
+                                                        placeholder="0"
+                                                        className="w-20 text-center border-2 border-gray-100 rounded-lg p-2 focus:border-blue-400 focus:ring-4 focus:ring-blue-50 outline-none transition font-bold" 
+                                                        value={scores[s.id]?.[c.code] || ''} 
+                                                        onChange={(e) => updateScore(s.id, c.code, e.target.value, c.max)} 
+                                                    />
+                                                </td>
+                                            ))}
+                                            <td className="p-4 text-center font-black bg-slate-50 text-blue-600 text-lg">{total}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                        {subjects.length === 0 && (
+                            <div className="p-10 text-center text-gray-400 italic">No subjects added. Use the sidebar to add subjects to this class.</div>
+                        )}
+                    </div>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="bg-white p-6 rounded shadow border">
-                        <h3 className="font-bold mb-4 border-b pb-2">Behavioral Traits</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Traits and Comments */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
+                    <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-sm border">
+                        <h3 className="font-bold mb-4 border-b pb-2 flex items-center gap-2">
+                            <ShieldCheck className="text-blue-500" size={18}/> Behavioral Traits
+                        </h3>
+                        <div className="space-y-3">
                             {BEHAVIORAL_TRAITS.map(t => (
-                                <div key={t}>
-                                    <label className="text-xs block text-gray-500 font-bold mb-1">{t}</label>
-                                    <select className="w-full border rounded text-sm p-1.5" value={behaviors[t] || 'Good'} onChange={(e) => { setBehaviors(p => ({...p, [t]: e.target.value})); save(); }}>
-                                        {RATINGS.map(r => <option key={r}>{r}</option>)}
+                                <div key={t} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">{t}</label>
+                                    <select 
+                                        className="border-none bg-transparent text-xs font-bold text-blue-700 outline-none cursor-pointer" 
+                                        value={behaviors[t] || 'Good'} 
+                                        onChange={(e) => { setBehaviors(p => ({...p, [t]: e.target.value})); save(); }}
+                                    >
+                                        {RATINGS.map(r => <option key={r} value={r}>{r}</option>)}
                                     </select>
                                 </div>
                             ))}
                         </div>
                     </div>
                     
-                    <div className="space-y-4">
-                        <div className="bg-white p-6 rounded shadow h-fit border">
-                            <h3 className="font-bold mb-2 border-b pb-2 text-blue-600">Mid-Term Comment</h3>
-                            <textarea className="w-full border rounded p-3 h-24 text-sm focus:ring-2 focus:ring-blue-200 outline-none resize-none" value={comments.mid} onChange={(e) => { setComments(p => ({...p, mid: e.target.value})); save(); }} />
+                    <div className="lg:col-span-2 space-y-6">
+                        <div className="bg-white p-6 rounded-xl shadow-sm border h-fit">
+                            <h3 className="font-bold mb-3 flex items-center gap-2 text-blue-600">
+                                <Plus size={18}/> Mid-Term Remark
+                            </h3>
+                            <textarea 
+                                className="w-full border-2 border-gray-100 rounded-xl p-4 h-32 text-sm focus:border-blue-400 outline-none transition resize-none bg-blue-50/20" 
+                                placeholder="Write mid-term observation here..."
+                                value={comments.mid} 
+                                onChange={(e) => { setComments(p => ({...p, mid: e.target.value})); save(); }} 
+                            />
                         </div>
-                        <div className="bg-white p-6 rounded shadow h-fit border">
-                            <h3 className="font-bold mb-2 border-b pb-2 text-green-600">Full Term Comment</h3>
-                            <textarea className="w-full border rounded p-3 h-24 text-sm focus:ring-2 focus:ring-green-200 outline-none resize-none" value={comments.full} onChange={(e) => { setComments(p => ({...p, full: e.target.value})); save(); }} />
+                        <div className="bg-white p-6 rounded-xl shadow-sm border h-fit">
+                            <h3 className="font-bold mb-3 flex items-center gap-2 text-green-600">
+                                <Save size={18}/> End of Term Remark
+                            </h3>
+                            <textarea 
+                                className="w-full border-2 border-gray-100 rounded-xl p-4 h-32 text-sm focus:border-green-400 outline-none transition resize-none bg-green-50/20" 
+                                placeholder="Write final term report here..."
+                                value={comments.full} 
+                                onChange={(e) => { setComments(p => ({...p, full: e.target.value})); save(); }} 
+                            />
                         </div>
                     </div>
                 </div>
