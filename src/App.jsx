@@ -5,7 +5,7 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, User, Download,
-  X, Eye, Trash2, ShieldCheck, Save, Menu, Upload, Users, Key, Copy
+  X, Eye, Trash2, ShieldCheck, Save, Menu, Upload, Users, Key, Copy, UserPlus
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -311,42 +311,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     setLoading(false);
   };
 
-  const addStudent = async (e) => {
-    e.preventDefault();
-    const form = new FormData(e.target);
-    const data = Object.fromEntries(form.entries());
-    if (students.length >= school.max_students) return window.alert("Limit reached!");
-    const pin = generatePIN();
-    const autoAdm = generateAdmissionNumber();
-    const { error } = await supabase.from('students').insert({
-      school_id: school.id, name: data.name, admission_no: autoAdm,
-      gender: data.gender, class_id: data.class_id, parent_pin: pin
-    });
-    if (error) window.alert(error.message); 
-    else { window.alert(`Added! Adm: ${autoAdm}, PIN: ${pin}`); e.target.reset(); fetchSchoolData(); }
-  };
-
-  const inviteAdmin = async (e) => {
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      const email = fd.get('email');
-      const name = fd.get('name');
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      
-      const currentInvites = school.admin_invites || [];
-      const newInvite = { email, name, code, created_at: new Date().toISOString() };
-      const updatedInvites = [...currentInvites, newInvite];
-
-      const { error } = await supabase.from('schools').update({ admin_invites: updatedInvites }).eq('id', school.id);
-      if(!error) {
-          window.alert(`Invite Created! Code: ${code}\nShare this code with the user to register.`);
-          e.target.reset();
-          fetchSchoolData();
-      } else {
-          window.alert("Error creating invite: " + error.message);
-      }
-  };
-
   const addConfigField = async () => {
     if(!newConfig.name || !newConfig.max) return;
     const code = newConfig.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
@@ -397,13 +361,11 @@ const SchoolAdmin = ({ profile, onLogout }) => {
 
   return (
     <div className="min-h-screen bg-gray-100 flex font-sans flex-col md:flex-row">
-      {/* Mobile Header */}
       <div className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-20 sticky top-0">
           <h2 className="font-bold flex items-center gap-2"><School size={20}/> Admin</h2>
           <button onClick={() => setSidebarOpen(!sidebarOpen)}><Menu /></button>
       </div>
 
-      {/* Sidebar */}
       <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-10 inset-y-0 left-0 w-64 bg-slate-900 text-white flex flex-col p-4 transition duration-200 ease-in-out`}>
         <div className="hidden md:flex items-center gap-2 font-bold text-xl mb-8"><School /> Admin Panel</div>
         <nav className="space-y-2 flex-1 mt-4 md:mt-0">
@@ -416,10 +378,8 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         <button onClick={onLogout} className="flex items-center gap-2 text-red-400 mt-auto mb-4 md:mb-0"><LogOut size={18}/> Logout</button>
       </div>
 
-      {/* Overlay for mobile sidebar */}
       {sidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-0 md:hidden" onClick={() => setSidebarOpen(false)}></div>}
 
-      {/* Main Content */}
       <div className="flex-1 p-4 md:p-8 overflow-y-auto">
         {activeTab === 'dashboard' && (
            <div>
@@ -448,13 +408,8 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                         {(school?.admin_invites || []).length === 0 && <p className="text-sm text-gray-400">No pending invites.</p>}
                         {(school?.admin_invites || []).map((inv, i) => (
                              <div key={i} className="flex justify-between items-center bg-yellow-50 p-2 mb-2 rounded border border-yellow-200">
-                                 <div>
-                                     <p className="text-xs font-bold">{inv.name}</p>
-                                     <p className="text-xs">{inv.email}</p>
-                                 </div>
-                                 <div className="text-right">
-                                     <p className="text-lg font-mono font-bold text-blue-600">{inv.code}</p>
-                                 </div>
+                                 <div><p className="text-xs font-bold">{inv.name}</p><p className="text-xs">{inv.email}</p></div>
+                                 <div className="text-right"><p className="text-lg font-mono font-bold text-blue-600">{inv.code}</p></div>
                              </div>
                         ))}
                     </div>
@@ -463,10 +418,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                     <h3 className="font-bold mb-4">Current Admins</h3>
                     {admins.map(a => (
                         <div key={a.id} className="p-3 border-b flex justify-between items-center">
-                            <div>
-                                <p className="font-bold">{a.full_name}</p>
-                                <p className="text-xs text-gray-500">{a.id === profile.id ? '(You)' : 'Co-Admin'}</p>
-                            </div>
+                            <div><p className="font-bold">{a.full_name}</p><p className="text-xs text-gray-500">{a.id === profile.id ? '(You)' : 'Co-Admin'}</p></div>
                             <User size={16} className="text-gray-400"/>
                         </div>
                     ))}
@@ -483,9 +435,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                             <code className="bg-white px-3 py-2 rounded border border-blue-200 font-mono text-lg font-bold select-all flex-1 text-center overflow-x-auto">
                                 {school?.id}
                             </code>
-                            <button onClick={() => {navigator.clipboard.writeText(school.id); window.alert('Copied!');}} className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700">
-                                <Copy size={18}/>
-                            </button>
+                            <button onClick={() => {navigator.clipboard.writeText(school.id); window.alert('Copied!');}} className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700"><Copy size={18}/></button>
                         </div>
                         <p className="text-xs text-blue-600 mt-2">Give this ID to teachers so they can join your school.</p>
                     </div>
@@ -534,15 +484,8 @@ const SchoolAdmin = ({ profile, onLogout }) => {
 
         {activeTab === 'students' && (
             <div>
-                <h2 className="text-xl font-bold mb-4">Manage Students</h2>
-                <div className="bg-white p-4 rounded shadow mb-6">
-                    <form onSubmit={addStudent} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                        <input name="name" placeholder="Student Full Name" className="border p-2 rounded" required />
-                        <select name="gender" className="border p-2 rounded"><option>Male</option><option>Female</option></select>
-                        <select name="class_id" className="border p-2 rounded" required>{classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
-                        <button className="bg-green-600 text-white p-2 rounded font-bold flex items-center justify-center gap-2"><Plus size={18}/> Register</button>
-                    </form>
-                </div>
+                <h2 className="text-xl font-bold mb-1">Overview: All Students</h2>
+                <p className="text-sm text-gray-500 mb-6">Note: Form Tutors are responsible for registering students into their respective classes.</p>
                 <div className="bg-white rounded shadow overflow-x-auto">
                     <table className="w-full text-left text-sm min-w-[600px]">
                         <thead className="bg-slate-100 border-b">
@@ -585,9 +528,15 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                     await supabase.from('classes').insert({school_id:school.id, name:fd.get('name'), form_tutor_id:fd.get('tid')||null});
                     e.target.reset(); fetchSchoolData();
                 }} className="flex flex-col md:flex-row gap-4 items-end mb-6">
-                    <input name="name" placeholder="Class Name (e.g. JSS 1)" className="border p-2 rounded w-full md:flex-1" required />
-                    <select name="tid" className="border p-2 rounded w-full md:flex-1"><option value="">Select Form Tutor</option>{teachers.map(t=><option key={t.id} value={t.id}>{t.full_name}</option>)}</select>
-                    <button className="bg-blue-600 text-white px-4 py-2 rounded font-bold w-full md:w-auto">Create Class</button>
+                    <div className="w-full md:flex-1">
+                        <label className="text-xs font-bold text-gray-400">CLASS NAME</label>
+                        <input name="name" placeholder="e.g. JSS 1" className="border p-2 rounded w-full" required />
+                    </div>
+                    <div className="w-full md:flex-1">
+                        <label className="text-xs font-bold text-gray-400">ASSIGN FORM TUTOR</label>
+                        <select name="tid" className="border p-2 rounded w-full"><option value="">Select Tutor</option>{teachers.map(t=><option key={t.id} value={t.id}>{t.full_name}</option>)}</select>
+                    </div>
+                    <button className="bg-blue-600 text-white px-4 py-2 rounded font-bold w-full md:w-auto h-10">Create Class</button>
                 </form>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{classes.map(c=>(
                     <div key={c.id} className="border p-4 rounded flex justify-between items-center bg-gray-50">
@@ -616,6 +565,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [schoolConfig, setSchoolConfig] = useState([]);
   const [schoolData, setSchoolData] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showAddStudent, setShowAddStudent] = useState(false);
 
   const { save, saving } = useAutoSave(async () => {
     if (!selectedStudent) return;
@@ -643,7 +593,28 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setSubjects(sub || []);
     const { data: stu } = await supabase.from('students').select('*, classes(profiles(signature_url))').eq('class_id', classId).order('name');
     setStudents(stu || []);
-    setSidebarOpen(false); // Close sidebar on mobile on select
+  };
+
+  const registerStudent = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const pin = generatePIN();
+    const adm = generateAdmissionNumber();
+    const { error } = await supabase.from('students').insert({
+        school_id: schoolData.id,
+        class_id: curClass.id,
+        name: fd.get('name'),
+        gender: fd.get('gender'),
+        admission_no: adm,
+        parent_pin: pin
+    });
+    if (error) alert(error.message);
+    else {
+        alert(`Student Registered!\nAdm No: ${adm}\nPIN: ${pin}`);
+        e.target.reset();
+        setShowAddStudent(false);
+        loadClass(curClass.id);
+    }
   };
 
   const uploadSignature = async (e) => {
@@ -671,7 +642,8 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setComments({ full: comm?.tutor_comment || "", mid: comm?.midterm_tutor_comment || "" });
     setBehaviors(comm?.behaviors ? JSON.parse(comm.behaviors) : {});
     setSelectedStudent(student);
-    setSidebarOpen(false); // Close sidebar on mobile
+    setSidebarOpen(false); 
+    setShowAddStudent(false);
   };
 
   const updateScore = (subId, code, value, max) => {
@@ -707,7 +679,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     
     const logoBase64 = await imageUrlToBase64(schoolData.logo_url);
     const principalSigBase64 = await imageUrlToBase64(schoolData.principal_signature_url);
-    
     const { data: teacherProfile } = await supabase.from('profiles').select('signature_url').eq('id', profile.id).single();
     const teacherSigBase64 = await imageUrlToBase64(teacherProfile?.signature_url);
 
@@ -747,39 +718,60 @@ const TeacherDashboard = ({ profile, onLogout }) => {
             <button onClick={onLogout} className="text-xs text-red-300 flex items-center gap-1 mt-2"><LogOut size={12}/> Logout</button>
         </div>
         <div className="p-4 bg-slate-800 md:bg-slate-900 border-t border-slate-700">
-             <div className="flex items-center gap-2 mb-2">
+             <div className="flex items-center gap-2 mb-4">
                 <input type="file" id="t-sig" className="hidden" onChange={uploadSignature} />
-                <label htmlFor="t-sig" className="bg-slate-700 text-white text-xs px-2 py-1 rounded cursor-pointer hover:bg-slate-600 flex items-center gap-1"><Upload size={10}/> Upload Signature</label>
+                <label htmlFor="t-sig" className="bg-slate-700 text-white text-xs px-2 py-1 rounded cursor-pointer hover:bg-slate-600 flex items-center gap-1"><Upload size={10}/> Sign</label>
+                <div className="text-[10px] text-gray-400">Class: {curClass?.name}</div>
              </div>
-             <select className="w-full text-black p-2 rounded text-sm" onChange={(e) => loadClass(parseInt(e.target.value))}>
-                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+             <button onClick={() => { setShowAddStudent(true); setSelectedStudent(null); }} className="w-full bg-blue-600 text-white py-2 rounded text-sm font-bold flex items-center justify-center gap-2 mb-2">
+                 <UserPlus size={16}/> Add New Student
+             </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
             {curClass && (
                 <>
                 <div className="p-3 bg-gray-100 font-bold text-xs flex justify-between border-b"><span>SUBJECTS</span><button onClick={async()=>{const n=window.prompt('Subject Name:'); if(n){await supabase.from('subjects').insert({class_id:curClass.id,name:n}); loadClass(curClass.id);}}}><Plus size={16}/></button></div>
-                <div className="p-2 flex flex-wrap gap-2 border-b">{subjects.map(s => (<span key={s.id} className="bg-blue-50 text-blue-800 text-xs px-2 py-1 rounded flex gap-1 border border-blue-200">{s.name} <button onClick={async()=>{if(window.confirm('Del?')) {await supabase.from('subjects').delete().eq('id', s.id); loadClass(curClass.id);}}} className="text-red-500">×</button></span>))}</div>
-                <div className="p-3 bg-gray-100 font-bold text-xs border-b">STUDENTS</div>
+                <div className="p-2 flex flex-wrap gap-2 border-b">{subjects.map(s => (<span key={s.id} className="bg-blue-50 text-blue-800 text-[10px] px-2 py-1 rounded flex gap-1 border border-blue-200">{s.name} <button onClick={async()=>{if(window.confirm('Del?')) {await supabase.from('subjects').delete().eq('id', s.id); loadClass(curClass.id);}}} className="text-red-500">×</button></span>))}</div>
+                <div className="p-3 bg-gray-100 font-bold text-xs border-b">MY STUDENTS ({students.length})</div>
                 {students.map(s => (
-                    <div key={s.id} onClick={() => loadStudentData(s)} className={`p-3 border-b cursor-pointer hover:bg-gray-50 text-sm ${selectedStudent?.id === s.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''}`}>{s.name}</div>
+                    <div key={s.id} onClick={() => loadStudentData(s)} className={`p-3 border-b cursor-pointer hover:bg-gray-50 text-sm flex justify-between items-center ${selectedStudent?.id === s.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''}`}>
+                        <span>{s.name}</span>
+                        <button onClick={async(e)=>{e.stopPropagation(); if(window.confirm('Delete Student?')){await supabase.from('students').delete().eq('id',s.id); loadClass(curClass.id);}}} className="text-gray-300 hover:text-red-500"><Trash2 size={14}/></button>
+                    </div>
                 ))}
                 </>
             )}
         </div>
-        <button onClick={onLogout} className="md:hidden p-4 text-red-600 border-t font-bold">Logout</button>
       </div>
+      
       {sidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-0 md:hidden" onClick={() => setSidebarOpen(false)}></div>}
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
-        {!selectedStudent ? <div className="text-center mt-20 text-gray-400">Select a student from the menu</div> : (
+        {showAddStudent ? (
+            <div className="max-w-md mx-auto bg-white p-8 rounded shadow">
+                <h2 className="text-2xl font-bold mb-4">Register New Student</h2>
+                <form onSubmit={registerStudent} className="space-y-4">
+                    <div><label className="text-xs font-bold text-gray-500">FULL NAME</label><input name="name" className="w-full border p-2 rounded" required /></div>
+                    <div><label className="text-xs font-bold text-gray-500">GENDER</label><select name="gender" className="w-full border p-2 rounded"><option>Male</option><option>Female</option></select></div>
+                    <div className="flex gap-2 pt-4">
+                        <button type="submit" className="flex-1 bg-green-600 text-white py-2 rounded font-bold">Register Student</button>
+                        <button type="button" onClick={()=>setShowAddStudent(false)} className="flex-1 bg-gray-100 py-2 rounded font-bold">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        ) : !selectedStudent ? (
+            <div className="text-center mt-20 text-gray-400">
+                <div className="bg-blue-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"><Users size={40} className="text-blue-200"/></div>
+                <p>Select a student from the menu or register a new one.</p>
+            </div>
+        ) : (
             <div>
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                     <h1 className="text-2xl font-bold text-slate-800">{selectedStudent.name}</h1>
                     <div className="flex gap-2 items-center w-full md:w-auto justify-between md:justify-end">
                         {saving && <span className="text-green-600 text-xs flex items-center gap-1"><Save size={12} className="animate-pulse"/> Saving...</span>}
-                        <button onClick={handlePreview} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700 transition text-sm"><Eye size={16}/> Preview</button>
+                        <button onClick={handlePreview} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700 transition text-sm"><Eye size={16}/> Preview & Send</button>
                     </div>
                 </div>
 
@@ -842,7 +834,8 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   );
 };
 
-// ==================== AUTH & PORTALS ====================
+// ==================== AUTH & PORTALS (Rest of the code remains the same) ====================
+// ... (Including Auth, ParentPortal, CentralAdmin, and App components exactly as they were in original file)
 const Auth = ({ onLogin, onParent }) => {
     const [mode, setMode] = useState('login'); 
     const [form, setForm] = useState({ email: '', password: '', name: '', pin: '', schoolCode: '' });
@@ -864,10 +857,8 @@ const Auth = ({ onLogin, onParent }) => {
                     window.alert("Registration Successful! Please Login."); setMode('login');
                 }
             } else if (mode === 'teacher_reg' || mode === 'admin_reg') {
-                 // Logic for Staff Registration
                  const role = mode === 'teacher_reg' ? 'teacher' : 'admin';
                  let schoolId = null;
-
                  if (role === 'teacher') {
                      const { data: sch } = await supabase.from('schools').select('id').eq('id', form.schoolCode).single();
                      if (!sch) throw new Error('Invalid School Code');
@@ -875,21 +866,17 @@ const Auth = ({ onLogin, onParent }) => {
                  } else {
                      const { data: schs } = await supabase.from('schools').select('*'); 
                      const targetSchool = schs?.find(s => (s.admin_invites || []).some(inv => inv.code === form.schoolCode && inv.email === form.email));
-                     
                      if (!targetSchool) throw new Error("Invalid Invite Code or Email mismatch.");
                      schoolId = targetSchool.id;
                  }
-
                  const { data: auth } = await supabase.auth.signUp({ email: form.email, password: form.password });
                  if(auth.user){
                     await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: role, school_id: schoolId });
-                    
                     if(role === 'admin') {
                         const { data: s } = await supabase.from('schools').select('admin_invites').eq('id', schoolId).single();
                         const updated = (s.admin_invites || []).filter(inv => inv.code !== form.schoolCode);
                         await supabase.from('schools').update({ admin_invites: updated }).eq('id', schoolId);
                     }
-
                     window.alert(`${role === 'admin' ? 'Admin' : 'Teacher'} Registered! Please Login.`); setMode('login');
                  }
             } else {
@@ -935,21 +922,14 @@ const ParentPortal = ({ onBack }) => {
         e.preventDefault(); setLoading(true);
         const { data: stu } = await supabase.from('students').select('*, schools(*), classes(*, profiles(signature_url)), comments(*), results(*, subjects(*))').eq('admission_no', creds.adm).eq('parent_pin', creds.pin).maybeSingle();
         if (!stu) { window.alert('Invalid Credentials'); setLoading(false); return; }
-        
         const comm = Array.isArray(stu.comments) ? stu.comments[0] : stu.comments;
         if (comm?.submission_status !== 'approved') { window.alert("Result not yet approved by school."); setLoading(false); return; }
-
         const behaviors = comm?.behaviors ? JSON.parse(comm.behaviors) : {};
         const behaviorArray = BEHAVIORAL_TRAITS.map(trait => ({ trait, rating: behaviors[trait] || 'Good' }));
         const logoBase64 = await imageUrlToBase64(stu.schools.logo_url);
         const principalSigBase64 = await imageUrlToBase64(stu.schools.principal_signature_url);
         const teacherSigBase64 = await imageUrlToBase64(stu.classes?.profiles?.signature_url);
-
-        setData({ 
-            student: stu, school: stu.schools, classInfo: stu.classes, 
-            results: stu.results, comments: comm || {}, behaviors: behaviorArray, 
-            logoBase64, principalSigBase64, teacherSigBase64 
-        });
+        setData({ student: stu, school: stu.schools, classInfo: stu.classes, results: stu.results, comments: comm || {}, behaviors: behaviorArray, logoBase64, principalSigBase64, teacherSigBase64 });
         setLoading(false);
     };
 
@@ -997,38 +977,27 @@ const CentralAdmin = ({ onLogout }) => {
     );
 };
 
-// ==================== APP ROOT ====================
 const App = () => {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [view, setView] = useState('auth');
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); if(!session) setLoading(false); });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session); if (!session) { setProfile(null); setView('auth'); setLoading(false); }
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); if (!session) { setProfile(null); setView('auth'); setLoading(false); } });
     return () => listener.subscription.unsubscribe();
   }, []);
-
   useEffect(() => {
     if (session) {
-      const fetchProfile = async () => {
-        const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
-        setProfile(data); setLoading(false);
-      };
+      const fetchProfile = async () => { const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle(); setProfile(data); setLoading(false); };
       fetchProfile();
     }
   }, [session]);
-
   if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-blue-600" size={48}/></div>;
-
   if (view === 'central') return <CentralAdmin onLogout={() => setView('auth')} />;
   if (view === 'parent') return <ParentPortal onBack={() => setView('auth')} />;
   if (!session) return <Auth onLogin={(d) => setView(d.role === 'central' ? 'central' : 'dashboard')} onParent={() => setView('parent')} />;
   if (!profile) return <div className="h-screen flex items-center justify-center text-red-500 font-bold">Profile Error. Please contact support.</div>;
-
   return profile.role === 'admin' ? <SchoolAdmin profile={profile} onLogout={() => supabase.auth.signOut()} /> : <TeacherDashboard profile={profile} onLogout={() => supabase.auth.signOut()} />;
 };
 
