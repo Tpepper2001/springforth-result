@@ -1,3 +1,5 @@
+--- START OF FILE Paste January 16, 2026 - 9:17AM ---
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
@@ -410,10 +412,10 @@ const SchoolAdmin = ({ profile, onLogout }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="bg-white p-6 rounded shadow">
                     <div className="bg-blue-50 p-4 rounded mb-6 border border-blue-200">
-                        <h3 className="text-xs font-bold text-blue-800 uppercase">School ID (For Teachers)</h3>
+                        <h3 className="text-xs font-bold text-blue-800 uppercase">School Access Code (For Teachers)</h3>
                         <div className="flex items-center gap-2 mt-2">
-                            <code className="bg-white px-2 py-1 rounded border font-mono font-bold flex-1">{school?.id}</code>
-                            <button onClick={() => {navigator.clipboard.writeText(school.id); alert('Copied!');}} className="bg-blue-600 text-white p-2 rounded"><Copy size={16}/></button>
+                            <code className="bg-white px-2 py-1 rounded border font-mono font-bold flex-1">{school?.access_code || school?.id?.slice(0,6)}</code>
+                            <button onClick={() => {navigator.clipboard.writeText(school?.access_code || school?.id?.slice(0,6)); alert('Copied!');}} className="bg-blue-600 text-white p-2 rounded"><Copy size={16}/></button>
                         </div>
                     </div>
                     <form onSubmit={updateSchool} className="space-y-4">
@@ -795,17 +797,18 @@ const Auth = ({ onLogin, onParent }) => {
                 if (!pinData) throw new Error('Invalid or Used PIN');
                 const { data: auth } = await supabase.auth.signUp({ email: form.email, password: form.password });
                 if(auth.user) {
-                    const { data: school } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: 'My School', max_students: pinData.student_limit }).select().single();
+                    const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
+                    const { data: school } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: 'My School', max_students: pinData.student_limit, access_code: accessCode }).select().single();
                     await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: school.id });
                     await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
-                    alert("Success! Please Login."); setMode('login');
+                    alert(`Success! School Created. Access Code: ${accessCode}. Please Login.`); setMode('login');
                 }
             } else if (mode === 'teacher_reg' || mode === 'admin_reg') {
                  const role = mode === 'teacher_reg' ? 'teacher' : 'admin';
                  let schoolId = null;
                  if (role === 'teacher') {
-                     const { data: sch } = await supabase.from('schools').select('id').eq('id', form.schoolCode).single();
-                     if (!sch) throw new Error('Invalid School Code');
+                     const { data: sch } = await supabase.from('schools').select('id').eq('access_code', form.schoolCode).maybeSingle();
+                     if (!sch) throw new Error('Invalid School Access Code');
                      schoolId = sch.id;
                  } else {
                      const { data: schs } = await supabase.from('schools').select('*'); 
@@ -837,7 +840,7 @@ const Auth = ({ onLogin, onParent }) => {
                     <input type="email" placeholder="Email" className="w-full p-2 border rounded" onChange={e=>setForm({...form, email:e.target.value})} required />
                     <input type="password" placeholder="Password" className="w-full p-2 border rounded" onChange={e=>setForm({...form, password:e.target.value})} required />
                     {mode === 'school_reg' && <input placeholder="Subscription PIN" className="w-full p-2 border rounded" onChange={e=>setForm({...form, pin:e.target.value})} required />}
-                    {(mode === 'teacher_reg' || mode === 'admin_reg') && <input placeholder="School ID / Invite Code" className="w-full p-2 border rounded" onChange={e=>setForm({...form, schoolCode:e.target.value})} required />}
+                    {(mode === 'teacher_reg' || mode === 'admin_reg') && <input placeholder="6-Digit Access Code" className="w-full p-2 border rounded" onChange={e=>setForm({...form, schoolCode:e.target.value})} required />}
                     <button disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded font-bold">{loading ? '...' : 'Access Portal'}</button>
                 </form>
                 {mode === 'login' && (
