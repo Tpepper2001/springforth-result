@@ -14,13 +14,9 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==================== KEEP-ALIVE LOGIC ====================
-/**
- * Prevents Supabase project from being paused by sending a tiny request
- */
 const keepSupabaseAlive = async () => {
     try {
         await supabase.from('schools').select('id').limit(1);
-        console.log("Supabase Heartbeat: Active");
     } catch (err) {
         console.warn("Heartbeat failed:", err.message);
     }
@@ -70,7 +66,6 @@ const imageUrlToBase64 = async (url) => {
             reader.readAsDataURL(blob);
         });
     } catch (e) {
-        console.error("Image convert error:", e);
         return null;
     }
 };
@@ -268,25 +263,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
 
   useEffect(() => { fetchSchoolData(); }, [fetchSchoolData]);
 
-  const inviteAdmin = async (e) => {
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      const email = fd.get('email');
-      const name = fd.get('name');
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      const currentInvites = school.admin_invites || [];
-      const newInvite = { email, name, code, created_at: new Date().toISOString() };
-      const updatedInvites = [...currentInvites, newInvite];
-      const { error } = await supabase.from('schools').update({ admin_invites: updatedInvites }).eq('id', school.id);
-      if(!error) {
-          window.alert(`Invite Created! Code: ${code}\nShare this code with the user.`);
-          e.target.reset();
-          fetchSchoolData();
-      } else {
-          window.alert("Error: " + error.message);
-      }
-  };
-
   const updateSchool = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
@@ -366,9 +342,9 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-10 inset-y-0 left-0 w-64 bg-slate-900 text-white flex flex-col p-4 transition duration-200 ease-in-out`}>
         <div className="hidden md:flex items-center gap-2 font-bold text-xl mb-8"><School /> Admin Panel</div>
         <nav className="space-y-2 flex-1 mt-4 md:mt-0">
-          {['dashboard', 'info', 'admins', 'students', 'classes'].map(t => (
+          {['dashboard', 'info', 'students', 'classes'].map(t => (
               <button key={t} onClick={()=>{setActiveTab(t); setSidebarOpen(false);}} className={`w-full text-left p-3 rounded capitalize flex gap-2 ${activeTab===t?'bg-blue-600':''}`}>
-                  {t === 'dashboard' ? <LayoutDashboard size={18}/> : t==='admins' ? <Key size={18}/> : t==='students'?<User size={18}/> : <Menu size={18}/>} {t}
+                  {t === 'dashboard' ? <LayoutDashboard size={18}/> : t==='students'?<User size={18}/> : <Menu size={18}/>} {t}
               </button>
           ))}
         </nav>
@@ -387,42 +363,9 @@ const SchoolAdmin = ({ profile, onLogout }) => {
            </div>
         )}
 
-        {activeTab === 'admins' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="bg-white p-6 rounded shadow">
-                    <h2 className="text-xl font-bold mb-4">Manage Admins</h2>
-                    <form onSubmit={inviteAdmin} className="space-y-4">
-                        <input name="name" placeholder="Name" className="w-full p-2 border rounded" required />
-                        <input name="email" type="email" placeholder="Email" className="w-full p-2 border rounded" required />
-                        <button className="bg-blue-600 text-white w-full py-2 rounded font-bold">Generate Code</button>
-                    </form>
-                    <div className="mt-8">
-                        <h3 className="font-bold border-b pb-2 mb-2">Pending Invites</h3>
-                        {(school?.admin_invites || []).map((inv, i) => (
-                             <div key={i} className="flex justify-between items-center bg-yellow-50 p-2 mb-2 rounded border">
-                                 <div><p className="text-xs font-bold">{inv.name}</p><p className="text-xs">{inv.email}</p></div>
-                                 <p className="text-lg font-mono font-bold text-blue-600">{inv.code}</p>
-                             </div>
-                        ))}
-                    </div>
-                </div>
-                <div className="bg-white p-6 rounded shadow">
-                    <h3 className="font-bold mb-4">Current Admins</h3>
-                    {admins.map(a => (<div key={a.id} className="p-2 border-b flex justify-between"><span>{a.full_name}</span><User size={14}/></div>))}
-                </div>
-            </div>
-        )}
-
         {activeTab === 'info' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="bg-white p-6 rounded shadow">
-                    <div className="bg-blue-50 p-4 rounded mb-6 border border-blue-200">
-                        <h3 className="text-xs font-bold text-blue-800 uppercase">School Access Code (For Teachers)</h3>
-                        <div className="flex items-center gap-2 mt-2">
-                            <code className="bg-white px-2 py-1 rounded border font-mono font-bold flex-1">{school?.access_code || school?.id?.slice(0,6)}</code>
-                            <button onClick={() => {navigator.clipboard.writeText(school?.access_code || school?.id?.slice(0,6)); alert('Copied!');}} className="bg-blue-600 text-white p-2 rounded"><Copy size={16}/></button>
-                        </div>
-                    </div>
                     <form onSubmit={updateSchool} className="space-y-4">
                         <input name="name" defaultValue={school?.name} placeholder="School Name" className="w-full p-2 border rounded" />
                         <input name="address" defaultValue={school?.address} placeholder="Address" className="w-full p-2 border rounded" />
@@ -795,8 +738,17 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 // ==================== AUTH & PORTALS ====================
 const Auth = ({ onLogin, onParent }) => {
     const [mode, setMode] = useState('login'); 
-    const [form, setForm] = useState({ email: '', password: '', name: '', pin: '1234', schoolCode: '' });
+    const [form, setForm] = useState({ email: '', password: '', name: '', schoolId: '' });
+    const [schools, setSchools] = useState([]);
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        const fetchSchools = async () => {
+            const { data } = await supabase.from('schools').select('id, name');
+            setSchools(data || []);
+        };
+        fetchSchools();
+    }, []);
 
     const handleAuth = async (e) => {
         e.preventDefault(); setLoading(true);
@@ -805,49 +757,24 @@ const Auth = ({ onLogin, onParent }) => {
                 if (form.email === 'oluwatoyin' && form.password === 'Funmilola') onLogin({ role: 'central' });
                 else throw new Error('Invalid Central Admin Credentials');
             } else if (mode === 'school_reg') {
-                // Accept hardcoded PIN for testing
-                let pinData = null;
-                if (form.pin === '1234') {
-                    pinData = { student_limit: 100, id: 'test-pin' };
-                } else {
-                    const { data: dbPinData, error: pinError } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
-                    if (pinError || !dbPinData) throw new Error('Invalid or Used PIN');
-                    pinData = dbPinData;
-                }
                 const { data: auth, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
                 if (authError) throw authError;
                 if(auth.user) {
                     const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
-                    const { data: school, error: schoolError } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: 'My School', access_code: accessCode }).select().single();
+                    const { data: school, error: schoolError } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: form.name + ' School', access_code: accessCode }).select().single();
                     if (schoolError) throw schoolError;
-                    const { error: profileError } = await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: school.id });
-                    if (profileError) throw profileError;
-                    // Only update subscription_pins if it's from database
-                    if (form.pin !== '1234') {
-                        await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
-                    }
-                    alert(`Success! School Created. Access Code: ${accessCode}. Please check your email to verify your account, then login.`); 
+                    await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: school.id });
+                    alert(`Success! School Created. You can now login.`); 
                     setMode('login');
                 }
             } else if (mode === 'teacher_reg' || mode === 'admin_reg') {
                  const role = mode === 'teacher_reg' ? 'teacher' : 'admin';
-                 let schoolId = null;
-                 if (role === 'teacher') {
-                     const { data: sch, error: schError } = await supabase.from('schools').select('id').eq('access_code', form.schoolCode).maybeSingle();
-                     if (schError || !sch) throw new Error('Invalid School Access Code');
-                     schoolId = sch.id;
-                 } else {
-                     const { data: schs } = await supabase.from('schools').select('*'); 
-                     const targetSchool = schs?.find(s => (s.admin_invites || []).some(inv => inv.code === form.schoolCode && inv.email === form.email));
-                     if (!targetSchool) throw new Error("Invalid Invite Code or Email mismatch.");
-                     schoolId = targetSchool.id;
-                 }
+                 if (!form.schoolId) throw new Error("Please select a school.");
                  const { data: auth, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
                  if (authError) throw authError;
                  if(auth.user){
-                    const { error: profileError } = await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: role, school_id: schoolId });
-                    if (profileError) throw profileError;
-                    alert(`${role.charAt(0).toUpperCase() + role.slice(1)} Registered! Please check your email to verify your account, then login.`); 
+                    await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: role, school_id: form.schoolId });
+                    alert(`${role.charAt(0).toUpperCase() + role.slice(1)} Registered! You can now login.`); 
                     setMode('login');
                  }
             } else {
@@ -862,18 +789,18 @@ const Auth = ({ onLogin, onParent }) => {
             <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-md border-t-4 border-blue-600">
                 <div className="text-center mb-6"><div className="bg-blue-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"><School className="text-blue-600" size={24} /></div><h1 className="text-2xl font-bold">Springforth Results</h1></div>
                 <div className="flex flex-wrap justify-center gap-3 mb-6 text-[10px] font-bold uppercase border-b pb-2">
-                    {['login', 'central', 'school_reg', 'teacher_reg', 'admin_reg'].map(m => <button key={m} onClick={()=>setMode(m)} className={`capitalize ${mode===m?'text-blue-600 border-b border-blue-600':''}`}>{m.replace('_', ' ')}</button>)}
+                    {['login', 'school_reg', 'teacher_reg', 'admin_reg'].map(m => <button key={m} onClick={()=>setMode(m)} className={`capitalize ${mode===m?'text-blue-600 border-b border-blue-600':''}`}>{m.replace('_', ' ')}</button>)}
                 </div>
                 <form onSubmit={handleAuth} className="space-y-4">
                     {mode.includes('reg') && <input placeholder="Full Name" className="w-full p-2 border rounded" onChange={e=>setForm({...form, name:e.target.value})} required />}
-                    {mode === 'central' ? (
-                        <input placeholder="Username" className="w-full p-2 border rounded" onChange={e=>setForm({...form, email:e.target.value})} required />
-                    ) : (
-                        <input type="email" placeholder="Email" className="w-full p-2 border rounded" onChange={e=>setForm({...form, email:e.target.value})} required />
-                    )}
+                    <input type="email" placeholder="Email" className="w-full p-2 border rounded" onChange={e=>setForm({...form, email:e.target.value})} required />
                     <input type="password" placeholder="Password" className="w-full p-2 border rounded" onChange={e=>setForm({...form, password:e.target.value})} required />
-                    {mode === 'school_reg' && <input placeholder="Subscription PIN" defaultValue="1234" className="w-full p-2 border rounded" onChange={e=>setForm({...form, pin:e.target.value})} required />}
-                    {(mode === 'teacher_reg' || mode === 'admin_reg') && <input placeholder="6-Digit Access Code" className="w-full p-2 border rounded" onChange={e=>setForm({...form, schoolCode:e.target.value})} required />}
+                    {(mode === 'teacher_reg' || mode === 'admin_reg') && (
+                        <select className="w-full p-2 border rounded bg-white" onChange={e=>setForm({...form, schoolId:e.target.value})} required>
+                            <option value="">Select Your School</option>
+                            {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                    )}
                     <button disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded font-bold">{loading ? '...' : 'Access Portal'}</button>
                 </form>
                 {mode === 'login' && (
@@ -913,7 +840,7 @@ const ParentPortal = ({ onBack }) => {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-green-50 p-4">
-            <form onSubmit={fetchResult} className="bg-white p-8 rounded shadow w-full max-w-sm border-t-4 border-green-600">
+            <form onSubmit={fetchResult} className="bg-white p-8 rounded shadow w-full max-sm border-t-4 border-green-600">
                 <h2 className="text-xl font-bold text-center mb-6 uppercase tracking-widest">Parent Portal</h2>
                 <input placeholder="Admission No" className="w-full p-2 border rounded mb-3" onChange={e=>setCreds({...creds, adm:e.target.value})} required />
                 <input type="password" placeholder="Access PIN" className="w-full p-2 border rounded mb-4" onChange={e=>setCreds({...creds, pin:e.target.value})} required />
@@ -925,15 +852,10 @@ const ParentPortal = ({ onBack }) => {
 };
 
 const CentralAdmin = ({ onLogout }) => {
-    const [pins, setPins] = useState([]);
-    useEffect(()=>{ const f = async () => { const {data} = await supabase.from('subscription_pins').select('*'); setPins(data||[]); }; f(); },[]);
     return (
         <div className="p-8 bg-slate-900 min-h-screen text-white font-mono">
             <div className="flex justify-between items-center mb-8"><h1 className="text-2xl font-bold">Central</h1><button onClick={onLogout} className="text-red-400 border px-2 py-1 rounded">Logout</button></div>
-            <button onClick={async()=>{ await supabase.from('subscription_pins').insert({ code: `SUB-${Math.floor(Math.random()*90000)}`, student_limit: 100 }); window.location.reload(); }} className="bg-blue-600 px-4 py-2 rounded mb-6">+ New PIN</button>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                {pins.map(p=><div key={p.id} className={`p-4 rounded border ${p.is_used ? 'bg-slate-800' : 'bg-green-900'}`}><p className="font-bold">{p.code}</p></div>)}
-            </div>
+            <p>Code Management disabled as per system updates.</p>
         </div>
     );
 };
@@ -946,9 +868,7 @@ const App = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // RUN HEARTBEAT ON STARTUP
     keepSupabaseAlive();
-
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); if(!session) setLoading(false); });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session); if (!session) { setProfile(null); setView('auth'); setLoading(false); }
@@ -959,10 +879,7 @@ const App = () => {
   useEffect(() => {
     if (session) {
       const fetchProfile = async () => {
-        const { data, error } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
-        if (error) {
-          console.error('Profile fetch error:', error);
-        }
+        const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
         setProfile(data); 
         setLoading(false);
       };
@@ -970,39 +887,16 @@ const App = () => {
     }
   }, [session]);
 
-  const handleProfileError = async () => {
-    await supabase.auth.signOut();
-    setView('auth');
-  };
-
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600" size={48}/></div>;
   if (view === 'central') return <CentralAdmin onLogout={() => setView('auth')} />;
   if (view === 'parent') return <ParentPortal onBack={() => setView('auth')} />;
   if (!session) return <Auth onLogin={(d) => setView(d.role === 'central' ? 'central' : 'dashboard')} onParent={() => setView('parent')} />;
   if (!profile) return (
-    <div className="h-screen flex items-center justify-center bg-gray-50">
+    <div className="h-screen flex items-center justify-center bg-gray-50 p-6">
       <div className="bg-white p-8 rounded-lg shadow-xl max-w-md text-center">
-        <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-          <X className="text-red-600" size={32} />
-        </div>
-        <h2 className="text-xl font-bold text-gray-800 mb-2">Profile Not Found</h2>
-        <p className="text-gray-600 mb-6">
-          Your account exists but your profile hasn&apos;t been set up yet. This can happen if:
-        </p>
-        <ul className="text-left text-sm text-gray-600 mb-6 space-y-2">
-          <li>• You haven&apos;t verified your email yet</li>
-          <li>• Your registration wasn&apos;t completed</li>
-          <li>• You used an invalid access code during signup</li>
-        </ul>
-        <p className="text-sm text-gray-700 mb-6">
-          Please try registering again or contact your administrator.
-        </p>
-        <button 
-          onClick={handleProfileError}
-          className="bg-red-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-red-700 transition"
-        >
-          Return to Login
-        </button>
+        <h2 className="text-xl font-bold text-gray-800 mb-2">Setting Up Profile...</h2>
+        <p className="text-gray-600 mb-6">If this takes too long, please try logging in again.</p>
+        <button onClick={() => supabase.auth.signOut()} className="bg-red-600 text-white px-6 py-3 rounded-lg font-bold">Return to Login</button>
       </div>
     </div>
   );
