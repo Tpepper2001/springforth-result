@@ -818,7 +818,7 @@ const Auth = ({ onLogin, onParent }) => {
                 if (authError) throw authError;
                 if(auth.user) {
                     const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
-                    const { data: school, error: schoolError } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: 'My School', max_students: pinData.student_limit, access_code: accessCode }).select().single();
+                    const { data: school, error: schoolError } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: 'My School', access_code: accessCode }).select().single();
                     if (schoolError) throw schoolError;
                     const { error: profileError } = await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: school.id });
                     if (profileError) throw profileError;
