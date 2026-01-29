@@ -193,20 +193,20 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
           ))}
         </View>
         <View style={{ flexDirection: 'row', gap: 15 }}>
-            <View style={{ flex: 1, border: '1pt solid #e2e8f0', padding: 8 }}>
+            <View style={{ flex: 1, borderWidth: 1, borderColor: '#e2e8f0', padding: 8 }}>
                 <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', marginBottom: 5 }}>BEHAVIOURAL TRAITS</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                     {BEHAVIORAL_TRAITS.map(t => (<View key={t} style={{ width: '50%', marginBottom: 3 }}><Text style={{ fontSize: 7, color: '#64748b' }}>{t}</Text><Text style={{ fontSize: 8 }}>{behaviorMap[t] || 'Good'}</Text></View>))}
                 </View>
             </View>
             <View style={{ flex: 1 }}>
-                <View style={{ marginBottom: 10, border: '1pt solid #e2e8f0', padding: 8 }}>
-                    <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold' }}>CLASS TUTOR'S REMARK</Text>
+                <View style={{ marginBottom: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 8 }}>
+                    <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold' }}>CLASS TUTOR&apos;S REMARK</Text>
                     <Text style={{ fontSize: 8, fontStyle: 'italic', marginTop: 3 }}>{teacherComment}</Text>
                 </View>
                 {!isMidTerm && (
-                <View style={{ border: '1pt solid #e2e8f0', padding: 8 }}>
-                    <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold' }}>PRINCIPAL'S REMARK</Text>
+                <View style={{ borderWidth: 1, borderColor: '#e2e8f0', padding: 8 }}>
+                    <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold' }}>PRINCIPAL&apos;S REMARK</Text>
                     <Text style={{ fontSize: 8, fontStyle: 'italic', marginTop: 3 }}>{comments?.principal_comment || 'Result Verified and Approved.'}</Text>
                 </View>
                 )}
@@ -358,7 +358,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                  <PDFViewer className="absolute inset-0 w-full h-full"><ResultPDF {...previewData} reportType={reportType} logoBase64={previewData.logoBase64} principalSigBase64={previewData.principalSigBase64} teacherSigBase64={previewData.teacherSigBase64} /></PDFViewer>
             </div>
         </div>
-    )
+    );
   }
 
   return (
@@ -487,7 +487,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
                                         <button onClick={async()=>{if(window.confirm('Delete?')){await supabase.from('students').delete().eq('id',s.id); fetchSchoolData();}}} className="text-red-600"><Trash2 size={16}/></button>
                                     </td>
                                 </tr>
-                            )
+                            );
                         })}
                     </tbody>
                 </table>
@@ -841,7 +841,6 @@ const Auth = ({ onLogin, onParent }) => {
             <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-md border-t-4 border-blue-600">
                 <div className="text-center mb-6"><div className="bg-blue-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"><School className="text-blue-600" size={24} /></div><h1 className="text-2xl font-bold">Springforth Results</h1></div>
                 <div className="flex flex-wrap justify-center gap-3 mb-6 text-[10px] font-bold uppercase border-b pb-2">
-                    {/* ADDED 'central' TO THE VISIBLE TABS */}
                     {['login', 'central', 'school_reg', 'teacher_reg', 'admin_reg'].map(m => <button key={m} onClick={()=>setMode(m)} className={`capitalize ${mode===m?'text-blue-600 border-b border-blue-600':''}`}>{m.replace('_', ' ')}</button>)}
                 </div>
                 <form onSubmit={handleAuth} className="space-y-4">
