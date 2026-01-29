@@ -383,29 +383,74 @@ const Auth = ({ onParent }) => {
   const [loading, setLoading] = useState(false);
   const [schools, setSchools] = useState([]);
   const [form, setForm] = useState({ email: '', password: '', name: '', schoolId: '' });
+  const [message, setMessage] = useState({ type: '', text: '' });
 
-  useEffect(() => { supabase.from('schools').select('id, name').then(({data}) => setSchools(data || [])); }, []);
+  useEffect(() => { 
+    supabase.from('schools').select('id, name').then(({data}) => setSchools(data || [])); 
+  }, []);
 
   const handleAuth = async (e) => {
-    e.preventDefault(); setLoading(true);
+    e.preventDefault(); 
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+    
     try {
       if (mode === 'school_reg') {
-        const { data: auth, error: ae } = await supabase.auth.signUp({ email: form.email, password: form.password });
+        const { data: auth, error: ae } = await supabase.auth.signUp({ 
+          email: form.email, 
+          password: form.password 
+        });
         if (ae) throw ae;
-        const { data: s, error: se } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: form.name }).select().single();
+        
+        const { data: s, error: se } = await supabase
+          .from('schools')
+          .insert({ owner_id: auth.user.id, name: form.name })
+          .select()
+          .single();
         if (se) throw se;
-        await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: s.id });
-        alert("Success!"); setMode('login');
+        
+        await supabase.from('profiles').insert({ 
+          id: auth.user.id, 
+          full_name: form.name, 
+          role: 'admin', 
+          school_id: s.id 
+        });
+        
+        setMessage({ type: 'success', text: 'School registered successfully! Please login.' });
+        setTimeout(() => setMode('login'), 2000);
+        
       } else if (mode === 'teacher_reg') {
-        const { data: auth, error: ae } = await supabase.auth.signUp({ email: form.email, password: form.password });
+        if (!form.schoolId) {
+          throw new Error('Please select a school');
+        }
+        
+        const { data: auth, error: ae } = await supabase.auth.signUp({ 
+          email: form.email, 
+          password: form.password 
+        });
         if (ae) throw ae;
-        await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'teacher', school_id: form.schoolId });
-        alert("Success!"); setMode('login');
+        
+        await supabase.from('profiles').insert({ 
+          id: auth.user.id, 
+          full_name: form.name, 
+          role: 'teacher', 
+          school_id: form.schoolId 
+        });
+        
+        setMessage({ type: 'success', text: 'Teacher account created! Please login.' });
+        setTimeout(() => setMode('login'), 2000);
+        
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
+        const { error } = await supabase.auth.signInWithPassword({ 
+          email: form.email, 
+          password: form.password 
+        });
         if (error) throw error;
       }
-    } catch (err) { alert(err.message); }
+    } catch (err) { 
+      console.error('Auth error:', err);
+      setMessage({ type: 'error', text: err.message || 'An error occurred. Please try again.' });
+    }
     setLoading(false);
   };
 
@@ -413,22 +458,83 @@ const Auth = ({ onParent }) => {
     <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
       <div className="bg-white p-6 lg:p-8 rounded-2xl shadow-xl w-full max-w-md border-t-8 border-blue-600">
         <h1 className="text-2xl lg:text-3xl font-black text-center mb-6 lg:mb-8 text-slate-800">Springforth</h1>
+        
+        {message.text && (
+          <div className={`mb-4 p-3 rounded-lg text-sm ${
+            message.type === 'success' 
+              ? 'bg-green-100 text-green-700 border border-green-300' 
+              : 'bg-red-100 text-red-700 border border-red-300'
+          }`}>
+            {message.text}
+          </div>
+        )}
+        
         <div className="flex gap-2 lg:gap-4 mb-6 lg:mb-8 text-[9px] lg:text-[10px] font-black uppercase tracking-widest border-b pb-2 overflow-x-auto">
           {['login', 'school_reg', 'teacher_reg'].map(m => (
-            <button key={m} onClick={() => setMode(m)} className={`whitespace-nowrap ${mode === m ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}`}>{m.replace('_',' ')}</button>
+            <button 
+              key={m} 
+              onClick={() => {
+                setMode(m);
+                setMessage({ type: '', text: '' });
+              }} 
+              className={`whitespace-nowrap ${mode === m ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}`}
+            >
+              {m.replace('_',' ')}
+            </button>
           ))}
         </div>
+        
         <form onSubmit={handleAuth} className="space-y-4">
-          {mode !== 'login' && <input placeholder="Full Name" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition text-sm lg:text-base" onChange={e => setForm({...form, name: e.target.value})} required />}
-          <input type="email" placeholder="Email Address" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition text-sm lg:text-base" onChange={e => setForm({...form, email: e.target.value})} required />
-          <input type="password" placeholder="Password" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition text-sm lg:text-base" onChange={e => setForm({...form, password: e.target.value})} required />
+          {mode !== 'login' && (
+            <input 
+              placeholder="Full Name" 
+              className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition text-sm lg:text-base" 
+              onChange={e => setForm({...form, name: e.target.value})} 
+              value={form.name}
+              required 
+            />
+          )}
+          <input 
+            type="email" 
+            placeholder="Email Address" 
+            className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition text-sm lg:text-base" 
+            onChange={e => setForm({...form, email: e.target.value})} 
+            value={form.email}
+            required 
+          />
+          <input 
+            type="password" 
+            placeholder="Password" 
+            className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition text-sm lg:text-base" 
+            onChange={e => setForm({...form, password: e.target.value})} 
+            value={form.password}
+            required 
+          />
           {mode === 'teacher_reg' && (
-            <select className="w-full p-3 border-2 rounded-xl bg-white outline-none text-sm lg:text-base" onChange={e => setForm({...form, schoolId: e.target.value})} required>
+            <select 
+              className="w-full p-3 border-2 rounded-xl bg-white outline-none text-sm lg:text-base" 
+              onChange={e => setForm({...form, schoolId: e.target.value})} 
+              value={form.schoolId}
+              required
+            >
               <option value="">Select School</option>
               {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
-          <button className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg transition text-sm lg:text-base">{loading ? '...' : 'Access Portal'}</button>
+          <button 
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg transition text-sm lg:text-base disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="animate-spin" size={20} />
+                <span>Processing...</span>
+              </>
+            ) : (
+              'Access Portal'
+            )}
+          </button>
         </form>
         <div className="mt-6 lg:mt-8 pt-4 lg:pt-6 border-t border-slate-100">
             <button onClick={onParent} className="w-full bg-green-50 text-green-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-100 transition text-sm lg:text-base"><Search size={18}/> Parent/Student Access</button>
@@ -444,22 +550,97 @@ const App = () => {
   const [profile, setProfile] = useState(null);
   const [view, setView] = useState('auth');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => { setSession(s); if(!s) setLoading(false); });
-    supabase.auth.onAuthStateChange((_event, s) => { setSession(s); if(!s) { setProfile(null); setView('auth'); } });
+  const loadProfile = useCallback(async (userId) => {
+    try {
+      setError(null);
+      const { data, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+      
+      if (profileError) {
+        console.error('Profile load error:', profileError);
+        setError(profileError.message);
+        setProfile(null);
+      } else if (!data) {
+        console.error('No profile found for user');
+        setError('Profile not found. Please contact administrator.');
+        setProfile(null);
+      } else {
+        setProfile(data);
+        setError(null);
+      }
+    } catch (err) {
+      console.error('Profile load exception:', err);
+      setError(err.message);
+      setProfile(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (session) {
-      supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle().then(({data}) => { setProfile(data); setLoading(false); });
-    }
-  }, [session]);
+    supabase.auth.getSession().then(({ data: { session: s } }) => { 
+      setSession(s); 
+      if (!s) {
+        setLoading(false);
+      } else {
+        loadProfile(s.user.id);
+      }
+    });
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => { 
+      setSession(s); 
+      if (!s) { 
+        setProfile(null); 
+        setView('auth');
+        setLoading(false);
+      } else {
+        loadProfile(s.user.id);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [loadProfile]);
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-blue-600" size={48}/></div>;
   if (view === 'parent') return <ParentPortal onBack={() => setView('auth')} />;
   if (!session) return <Auth onParent={() => setView('parent')} />;
-  if (!profile) return <div className="p-20 text-center"><button onClick={() => supabase.auth.signOut()} className="bg-red-500 text-white p-3 rounded-xl">Connection Error. Sign Out & Retry</button></div>;
+  if (error || !profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center space-y-4">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+            <X className="text-red-600" size={32} />
+          </div>
+          <h2 className="text-xl font-bold text-slate-800">Connection Error</h2>
+          <p className="text-slate-600 text-sm">
+            {error || 'Unable to load profile. Please try again.'}
+          </p>
+          <div className="flex flex-col gap-3 pt-4">
+            <button 
+              onClick={() => {
+                setLoading(true);
+                loadProfile(session.user.id);
+              }}
+              className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition"
+            >
+              Retry Connection
+            </button>
+            <button 
+              onClick={() => supabase.auth.signOut()} 
+              className="bg-red-500 text-white px-6 py-3 rounded-xl font-bold hover:bg-red-600 transition"
+            >
+              Sign Out & Return to Login
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return <Dashboard profile={profile} onLogout={() => supabase.auth.signOut()} />;
 };
