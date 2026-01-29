@@ -805,8 +805,15 @@ const Auth = ({ onLogin, onParent }) => {
                 if (form.email === 'oluwatoyin' && form.password === 'Funmilola') onLogin({ role: 'central' });
                 else throw new Error('Invalid Central Admin Credentials');
             } else if (mode === 'school_reg') {
-                const { data: pinData, error: pinError } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
-                if (pinError || !pinData) throw new Error('Invalid or Used PIN');
+                // Accept hardcoded PIN for testing
+                let pinData = null;
+                if (form.pin === '1234') {
+                    pinData = { student_limit: 100, id: 'test-pin' };
+                } else {
+                    const { data: dbPinData, error: pinError } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
+                    if (pinError || !dbPinData) throw new Error('Invalid or Used PIN');
+                    pinData = dbPinData;
+                }
                 const { data: auth, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
                 if (authError) throw authError;
                 if(auth.user) {
@@ -815,7 +822,10 @@ const Auth = ({ onLogin, onParent }) => {
                     if (schoolError) throw schoolError;
                     const { error: profileError } = await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: school.id });
                     if (profileError) throw profileError;
-                    await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
+                    // Only update subscription_pins if it's from database
+                    if (form.pin !== '1234') {
+                        await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
+                    }
                     alert(`Success! School Created. Access Code: ${accessCode}. Please check your email to verify your account, then login.`); 
                     setMode('login');
                 }
