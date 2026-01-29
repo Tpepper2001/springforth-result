@@ -795,7 +795,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 // ==================== AUTH & PORTALS ====================
 const Auth = ({ onLogin, onParent }) => {
     const [mode, setMode] = useState('login'); 
-    const [form, setForm] = useState({ email: '', password: '', name: '', pin: '', schoolCode: '' });
+    const [form, setForm] = useState({ email: '', password: '', name: '', pin: '1234', schoolCode: '' });
     const [loading, setLoading] = useState(false);
 
     const handleAuth = async (e) => {
@@ -862,7 +862,7 @@ const Auth = ({ onLogin, onParent }) => {
                         <input type="email" placeholder="Email" className="w-full p-2 border rounded" onChange={e=>setForm({...form, email:e.target.value})} required />
                     )}
                     <input type="password" placeholder="Password" className="w-full p-2 border rounded" onChange={e=>setForm({...form, password:e.target.value})} required />
-                    {mode === 'school_reg' && <input placeholder="Subscription PIN" className="w-full p-2 border rounded" onChange={e=>setForm({...form, pin:e.target.value})} required />}
+                    {mode === 'school_reg' && <input placeholder="Subscription PIN" defaultValue="1234" className="w-full p-2 border rounded" onChange={e=>setForm({...form, pin:e.target.value})} required />}
                     {(mode === 'teacher_reg' || mode === 'admin_reg') && <input placeholder="6-Digit Access Code" className="w-full p-2 border rounded" onChange={e=>setForm({...form, schoolCode:e.target.value})} required />}
                     <button disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded font-bold">{loading ? '...' : 'Access Portal'}</button>
                 </form>
