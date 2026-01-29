@@ -805,22 +805,26 @@ const Auth = ({ onLogin, onParent }) => {
                 if (form.email === 'oluwatoyin' && form.password === 'Funmilola') onLogin({ role: 'central' });
                 else throw new Error('Invalid Central Admin Credentials');
             } else if (mode === 'school_reg') {
-                const { data: pinData } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
-                if (!pinData) throw new Error('Invalid or Used PIN');
-                const { data: auth } = await supabase.auth.signUp({ email: form.email, password: form.password });
+                const { data: pinData, error: pinError } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
+                if (pinError || !pinData) throw new Error('Invalid or Used PIN');
+                const { data: auth, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
+                if (authError) throw authError;
                 if(auth.user) {
                     const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
-                    const { data: school } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: 'My School', max_students: pinData.student_limit, access_code: accessCode }).select().single();
-                    await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: school.id });
+                    const { data: school, error: schoolError } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: 'My School', max_students: pinData.student_limit, access_code: accessCode }).select().single();
+                    if (schoolError) throw schoolError;
+                    const { error: profileError } = await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: school.id });
+                    if (profileError) throw profileError;
                     await supabase.from('subscription_pins').update({ is_used: true }).eq('id', pinData.id);
-                    alert(`Success! School Created. Access Code: ${accessCode}. Please Login.`); setMode('login');
+                    alert(`Success! School Created. Access Code: ${accessCode}. Please check your email to verify your account, then login.`); 
+                    setMode('login');
                 }
             } else if (mode === 'teacher_reg' || mode === 'admin_reg') {
                  const role = mode === 'teacher_reg' ? 'teacher' : 'admin';
                  let schoolId = null;
                  if (role === 'teacher') {
-                     const { data: sch } = await supabase.from('schools').select('id').eq('access_code', form.schoolCode).maybeSingle();
-                     if (!sch) throw new Error('Invalid School Access Code');
+                     const { data: sch, error: schError } = await supabase.from('schools').select('id').eq('access_code', form.schoolCode).maybeSingle();
+                     if (schError || !sch) throw new Error('Invalid School Access Code');
                      schoolId = sch.id;
                  } else {
                      const { data: schs } = await supabase.from('schools').select('*'); 
@@ -828,10 +832,13 @@ const Auth = ({ onLogin, onParent }) => {
                      if (!targetSchool) throw new Error("Invalid Invite Code or Email mismatch.");
                      schoolId = targetSchool.id;
                  }
-                 const { data: auth } = await supabase.auth.signUp({ email: form.email, password: form.password });
+                 const { data: auth, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
+                 if (authError) throw authError;
                  if(auth.user){
-                    await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: role, school_id: schoolId });
-                    alert(`${role} Registered! Please Login.`); setMode('login');
+                    const { error: profileError } = await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: role, school_id: schoolId });
+                    if (profileError) throw profileError;
+                    alert(`${role.charAt(0).toUpperCase() + role.slice(1)} Registered! Please check your email to verify your account, then login.`); 
+                    setMode('login');
                  }
             } else {
                 const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
@@ -942,18 +949,53 @@ const App = () => {
   useEffect(() => {
     if (session) {
       const fetchProfile = async () => {
-        const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
-        setProfile(data); setLoading(false);
+        const { data, error } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+        if (error) {
+          console.error('Profile fetch error:', error);
+        }
+        setProfile(data); 
+        setLoading(false);
       };
       fetchProfile();
     }
   }, [session]);
 
+  const handleProfileError = async () => {
+    await supabase.auth.signOut();
+    setView('auth');
+  };
+
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600" size={48}/></div>;
   if (view === 'central') return <CentralAdmin onLogout={() => setView('auth')} />;
   if (view === 'parent') return <ParentPortal onBack={() => setView('auth')} />;
   if (!session) return <Auth onLogin={(d) => setView(d.role === 'central' ? 'central' : 'dashboard')} onParent={() => setView('parent')} />;
-  if (!profile) return <div className="h-screen flex items-center justify-center text-red-500 font-bold">Profile Error. Contact Support.</div>;
+  if (!profile) return (
+    <div className="h-screen flex items-center justify-center bg-gray-50">
+      <div className="bg-white p-8 rounded-lg shadow-xl max-w-md text-center">
+        <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+          <X className="text-red-600" size={32} />
+        </div>
+        <h2 className="text-xl font-bold text-gray-800 mb-2">Profile Not Found</h2>
+        <p className="text-gray-600 mb-6">
+          Your account exists but your profile hasn&apos;t been set up yet. This can happen if:
+        </p>
+        <ul className="text-left text-sm text-gray-600 mb-6 space-y-2">
+          <li>• You haven&apos;t verified your email yet</li>
+          <li>• Your registration wasn&apos;t completed</li>
+          <li>• You used an invalid access code during signup</li>
+        </ul>
+        <p className="text-sm text-gray-700 mb-6">
+          Please try registering again or contact your administrator.
+        </p>
+        <button 
+          onClick={handleProfileError}
+          className="bg-red-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-red-700 transition"
+        >
+          Return to Login
+        </button>
+      </div>
+    </div>
+  );
 
   return profile.role === 'admin' ? <SchoolAdmin profile={profile} onLogout={() => supabase.auth.signOut()} /> : <TeacherDashboard profile={profile} onLogout={() => supabase.auth.signOut()} />;
 };
