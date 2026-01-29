@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
-import { Loader2, School, LogOut, Users, Settings, CheckCircle, Search } from 'lucide-react';
+import { Loader2, School, LogOut, Users, Settings, CheckCircle, Search, Menu, X } from 'lucide-react';
 
 const supabaseUrl = 'https://ghlnenmfwlpwlqdrbean.supabase.co'; 
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdobG5lbm1md2xwd2xxZHJiZWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0MTE0MDQsImV4cCI6MjA3OTk4NzQwNH0.rNILUdI035c4wl4kFkZFP4OcIM_t7bNMqktKm25d5Gg'; 
@@ -109,6 +109,7 @@ const Dashboard = ({ profile, onLogout }) => {
   const [studentResults, setStudentResults] = useState([]);
   const [saving, setSaving] = useState(false);
   const [previewMode, setPreviewMode] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
@@ -129,6 +130,7 @@ const Dashboard = ({ profile, onLogout }) => {
 
   const loadStudent = async (stu) => {
     setSelectedStudent(stu);
+    setSidebarOpen(false); // Close sidebar on mobile
     const { data: res } = await supabase.from('results').select('*, subjects(name)').eq('student_id', stu.id);
     const { data: comm } = await supabase.from('comments').select('*').eq('student_id', stu.id).maybeSingle();
     setScores(res?.reduce((acc, r) => ({ ...acc, [r.subject_id]: r.scores }), {}) || {});
@@ -164,9 +166,38 @@ const Dashboard = ({ profile, onLogout }) => {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-800">
-      <div className="w-64 bg-slate-900 text-white flex flex-col p-4 shadow-xl">
-        <div className="font-bold text-xl mb-8 flex items-center gap-2 border-b border-slate-700 pb-4"><School className="text-blue-400"/> Springforth</div>
+    <div className="flex h-screen bg-slate-50 text-slate-800 overflow-hidden">
+      {/* Mobile Menu Button */}
+      <button 
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 bg-slate-900 text-white p-2 rounded-lg shadow-lg"
+      >
+        {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
+      </button>
+
+      {/* Sidebar - Mobile Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="lg:hidden fixed inset-0 bg-black/50 z-30"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <div className={`
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
+        lg:translate-x-0 
+        fixed lg:static 
+        inset-y-0 left-0 
+        w-64 
+        bg-slate-900 text-white 
+        flex flex-col p-4 shadow-xl 
+        transition-transform duration-300 ease-in-out 
+        z-40
+      `}>
+        <div className="font-bold text-xl mb-8 flex items-center gap-2 border-b border-slate-700 pb-4 mt-12 lg:mt-0">
+          <School className="text-blue-400"/> Springforth
+        </div>
         <div className="mb-6">
           <label className="text-[10px] text-slate-400 font-bold uppercase">Active Class</label>
           <select className="w-full bg-slate-800 p-2 rounded mt-1 border-none text-sm outline-none" value={selectedClassId} onChange={(e) => loadClass(e.target.value)}>
@@ -188,10 +219,10 @@ const Dashboard = ({ profile, onLogout }) => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-8">
+      <div className="flex-1 overflow-auto p-4 lg:p-8 w-full">
         {activeTab === 'settings' ? (
-          <div className="bg-white p-8 rounded-xl shadow-sm border max-w-2xl">
-            <h2 className="text-2xl font-bold mb-6">School Configuration</h2>
+          <div className="bg-white p-4 lg:p-8 rounded-xl shadow-sm border max-w-2xl mx-auto">
+            <h2 className="text-xl lg:text-2xl font-bold mb-6">School Configuration</h2>
             <form onSubmit={async(e)=>{
               e.preventDefault(); const fd=new FormData(e.target);
               await supabase.from('schools').update({
@@ -204,52 +235,55 @@ const Dashboard = ({ profile, onLogout }) => {
               <input name="m" defaultValue={school?.motto} placeholder="School Motto" className="w-full border p-2 rounded font-italic" />
               <input name="a" defaultValue={school?.address} placeholder="Address" className="w-full border p-2 rounded" />
               <input name="c" defaultValue={school?.contact_info} placeholder="Contact Info (Phone/Email)" className="w-full border p-2 rounded" />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input name="t" defaultValue={school?.current_term} placeholder="Term" className="border p-2 rounded" />
                 <input name="s" defaultValue={school?.current_session} placeholder="Session" className="border p-2 rounded" />
               </div>
-              <button className="bg-blue-600 text-white px-8 py-2 rounded-lg font-bold">Update School</button>
+              <button className="bg-blue-600 text-white px-8 py-2 rounded-lg font-bold w-full sm:w-auto">Update School</button>
             </form>
           </div>
         ) : !selectedStudent ? (
-          <div className="h-full flex flex-col items-center justify-center text-slate-300"><Users size={80}/><p className="mt-4 font-medium">Select a student from the sidebar</p></div>
+          <div className="h-full flex flex-col items-center justify-center text-slate-300"><Users size={60} className="lg:w-20 lg:h-20"/><p className="mt-4 font-medium text-sm lg:text-base">Select a student from the sidebar</p></div>
         ) : (
-          <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-l-8 border-l-blue-600">
+          <div className="space-y-4 lg:space-y-6 animate-in fade-in duration-500">
+            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center bg-white p-4 lg:p-6 rounded-xl shadow-sm border border-l-8 border-l-blue-600 gap-4">
               <div>
-                <h1 className="text-2xl font-bold">{selectedStudent.name}</h1>
+                <h1 className="text-xl lg:text-2xl font-bold">{selectedStudent.name}</h1>
                 <span className={`text-[10px] px-2 py-1 rounded uppercase font-bold ${commentData.submission_status === 'approved' ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
                     {commentData.submission_status}
                 </span>
               </div>
-              <div className="flex gap-3">
-                <button onClick={() => setPreviewMode('ca')} className="bg-slate-100 px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-200 transition">CA Report</button>
-                <button onClick={() => setPreviewMode('full')} className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-200 transition">Full Report</button>
-                <button onClick={() => handleSave(profile.role === 'admin' ? 'approved' : 'pending')} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold text-sm hover:shadow-lg transition">
+              <div className="flex flex-wrap gap-2 lg:gap-3">
+                <button onClick={() => setPreviewMode('ca')} className="bg-slate-100 px-3 lg:px-4 py-2 rounded-lg font-bold text-xs lg:text-sm hover:bg-slate-200 transition flex-1 sm:flex-none">CA Report</button>
+                <button onClick={() => setPreviewMode('full')} className="bg-blue-100 text-blue-700 px-3 lg:px-4 py-2 rounded-lg font-bold text-xs lg:text-sm hover:bg-blue-200 transition flex-1 sm:flex-none">Full Report</button>
+                <button onClick={() => handleSave(profile.role === 'admin' ? 'approved' : 'pending')} className="bg-green-600 text-white px-4 lg:px-6 py-2 rounded-lg font-bold text-xs lg:text-sm hover:shadow-lg transition w-full sm:w-auto">
                     {saving ? <Loader2 className="animate-spin" /> : (profile.role === 'admin' ? 'Approve & Save' : 'Submit for Approval')}
                 </button>
               </div>
             </div>
 
-            <div className="flex gap-6 border-b text-sm font-bold text-slate-400">
+            <div className="flex gap-3 lg:gap-6 border-b text-xs lg:text-sm font-bold text-slate-400 overflow-x-auto">
               {['scores', 'traits', 'remarks'].map(t => (
-                <button key={t} onClick={() => setActiveTab(t)} className={`pb-2 px-2 capitalize transition ${activeTab === t ? 'border-b-2 border-blue-600 text-blue-600' : 'hover:text-slate-600'}`}>{t}</button>
+                <button key={t} onClick={() => setActiveTab(t)} className={`pb-2 px-2 capitalize transition whitespace-nowrap ${activeTab === t ? 'border-b-2 border-blue-600 text-blue-600' : 'hover:text-slate-600'}`}>{t}</button>
               ))}
             </div>
 
             {activeTab === 'scores' && (
-              <div className="bg-white rounded-xl shadow-sm border p-6 overflow-hidden">
-                <table className="w-full">
+              <div className="bg-white rounded-xl shadow-sm border p-3 lg:p-6 overflow-x-auto">
+                <table className="w-full min-w-[600px]">
                   <thead>
-                    <tr className="bg-slate-50 text-left border-b"><th className="p-4">Subject</th>{school?.assessment_config?.map(c=><th key={c.code} className="p-4 text-center">{c.name}</th>)}</tr>
+                    <tr className="bg-slate-50 text-left border-b text-xs lg:text-sm">
+                      <th className="p-2 lg:p-4 sticky left-0 bg-slate-50">Subject</th>
+                      {school?.assessment_config?.map(c=><th key={c.code} className="p-2 lg:p-4 text-center">{c.name}</th>)}
+                    </tr>
                   </thead>
-                  <tbody className="divide-y">
+                  <tbody className="divide-y text-xs lg:text-sm">
                     {subjects.map(sub => (
                       <tr key={sub.id} className="hover:bg-slate-50 transition">
-                        <td className="p-4 font-semibold">{sub.name}</td>
+                        <td className="p-2 lg:p-4 font-semibold sticky left-0 bg-white">{sub.name}</td>
                         {school?.assessment_config?.map(c => (
-                          <td key={c.code} className="p-4 text-center">
-                            <input type="number" className="w-20 bg-slate-100 p-2 rounded text-center outline-none focus:ring-2 focus:ring-blue-400 transition" value={scores[sub.id]?.[c.code] || ''} 
+                          <td key={c.code} className="p-2 lg:p-4 text-center">
+                            <input type="number" className="w-16 lg:w-20 bg-slate-100 p-1 lg:p-2 rounded text-center outline-none focus:ring-2 focus:ring-blue-400 transition text-xs lg:text-sm" value={scores[sub.id]?.[c.code] || ''} 
                               onChange={(e)=>setScores({...scores, [sub.id]: {...(scores[sub.id]||{}), [c.code]: e.target.value}})}/>
                           </td>
                         ))}
@@ -261,12 +295,12 @@ const Dashboard = ({ profile, onLogout }) => {
             )}
 
             {activeTab === 'traits' && (
-              <div className="bg-white p-8 rounded-xl shadow-sm border grid grid-cols-2 gap-8">
+              <div className="bg-white p-4 lg:p-8 rounded-xl shadow-sm border grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8">
                 <div>
-                  <h3 className="font-bold mb-4 text-slate-500">BEHAVIORAL RATINGS</h3>
+                  <h3 className="font-bold mb-4 text-slate-500 text-sm lg:text-base">BEHAVIORAL RATINGS</h3>
                   {BEHAVIORS.map(b => (
                     <div key={b} className="flex justify-between items-center py-3 border-b border-slate-100 last:border-none">
-                      <span className="text-sm font-medium">{b}</span>
+                      <span className="text-xs lg:text-sm font-medium">{b}</span>
                       <select className="bg-slate-50 border p-1 rounded text-xs" value={commentData.behaviors?.[b] || 'Good'} 
                         onChange={(e)=>setCommentData({...commentData, behaviors: {...(commentData.behaviors || {}), [b]: e.target.value}})}>
                         {RATINGS.map(r => <option key={r} value={r}>{r}</option>)}
@@ -278,14 +312,14 @@ const Dashboard = ({ profile, onLogout }) => {
             )}
 
             {activeTab === 'remarks' && (
-              <div className="grid grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+                <div className="bg-white p-4 lg:p-6 rounded-xl shadow-sm border space-y-4">
                   <label className="text-xs font-bold text-slate-400 uppercase">Class Teacher's Remark</label>
-                  <textarea className="w-full border-2 p-3 rounded-lg h-32 focus:border-blue-500 outline-none" value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
+                  <textarea className="w-full border-2 p-3 rounded-lg h-32 focus:border-blue-500 outline-none text-sm" value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
                 </div>
-                <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
+                <div className="bg-white p-4 lg:p-6 rounded-xl shadow-sm border space-y-4">
                   <label className="text-xs font-bold text-slate-400 uppercase">Headmistress's Remark</label>
-                  <textarea className="w-full border-2 p-3 rounded-lg h-32 focus:border-blue-500 outline-none" disabled={profile.role !== 'admin'} value={commentData.principal_comment || ''} onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})} />
+                  <textarea className="w-full border-2 p-3 rounded-lg h-32 focus:border-blue-500 outline-none text-sm" disabled={profile.role !== 'admin'} value={commentData.principal_comment || ''} onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})} />
                 </div>
               </div>
             )}
@@ -294,11 +328,11 @@ const Dashboard = ({ profile, onLogout }) => {
       </div>
 
       {previewMode && (
-        <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-sm flex flex-col p-4">
-          <div className="bg-white p-4 rounded-t-xl flex justify-between items-center shadow-2xl">
-            <button onClick={() => setPreviewMode(null)} className="font-bold text-slate-600 hover:text-red-500 transition">✕ Close Preview</button>
+        <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-sm flex flex-col p-2 lg:p-4">
+          <div className="bg-white p-3 lg:p-4 rounded-t-xl flex flex-col sm:flex-row justify-between items-center shadow-2xl gap-3">
+            <button onClick={() => setPreviewMode(null)} className="font-bold text-slate-600 hover:text-red-500 transition text-sm lg:text-base order-2 sm:order-1">✕ Close Preview</button>
             <PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={studentResults} comments={commentData} type={previewMode} />} fileName={`${selectedStudent.name}.pdf`}>
-              <button className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700">Download Result</button>
+              <button className="bg-blue-600 text-white px-4 lg:px-6 py-2 rounded-lg font-bold hover:bg-blue-700 text-sm lg:text-base w-full sm:w-auto order-1 sm:order-2">Download Result</button>
             </PDFDownloadLink>
           </div>
           <PDFViewer className="flex-1 w-full rounded-b-xl overflow-hidden"><ResultPDF school={school} student={selectedStudent} results={studentResults} comments={commentData} type={previewMode} /></PDFViewer>
@@ -377,27 +411,27 @@ const Auth = ({ onParent }) => {
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border-t-8 border-blue-600">
-        <h1 className="text-3xl font-black text-center mb-8 text-slate-800">Springforth</h1>
-        <div className="flex gap-4 mb-8 text-[10px] font-black uppercase tracking-widest border-b pb-2">
+      <div className="bg-white p-6 lg:p-8 rounded-2xl shadow-xl w-full max-w-md border-t-8 border-blue-600">
+        <h1 className="text-2xl lg:text-3xl font-black text-center mb-6 lg:mb-8 text-slate-800">Springforth</h1>
+        <div className="flex gap-2 lg:gap-4 mb-6 lg:mb-8 text-[9px] lg:text-[10px] font-black uppercase tracking-widest border-b pb-2 overflow-x-auto">
           {['login', 'school_reg', 'teacher_reg'].map(m => (
-            <button key={m} onClick={() => setMode(m)} className={mode === m ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}>{m.replace('_',' ')}</button>
+            <button key={m} onClick={() => setMode(m)} className={`whitespace-nowrap ${mode === m ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}`}>{m.replace('_',' ')}</button>
           ))}
         </div>
         <form onSubmit={handleAuth} className="space-y-4">
-          {mode !== 'login' && <input placeholder="Full Name" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition" onChange={e => setForm({...form, name: e.target.value})} required />}
-          <input type="email" placeholder="Email Address" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition" onChange={e => setForm({...form, email: e.target.value})} required />
-          <input type="password" placeholder="Password" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition" onChange={e => setForm({...form, password: e.target.value})} required />
+          {mode !== 'login' && <input placeholder="Full Name" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition text-sm lg:text-base" onChange={e => setForm({...form, name: e.target.value})} required />}
+          <input type="email" placeholder="Email Address" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition text-sm lg:text-base" onChange={e => setForm({...form, email: e.target.value})} required />
+          <input type="password" placeholder="Password" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition text-sm lg:text-base" onChange={e => setForm({...form, password: e.target.value})} required />
           {mode === 'teacher_reg' && (
-            <select className="w-full p-3 border-2 rounded-xl bg-white outline-none" onChange={e => setForm({...form, schoolId: e.target.value})} required>
+            <select className="w-full p-3 border-2 rounded-xl bg-white outline-none text-sm lg:text-base" onChange={e => setForm({...form, schoolId: e.target.value})} required>
               <option value="">Select School</option>
               {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
-          <button className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg transition">{loading ? '...' : 'Access Portal'}</button>
+          <button className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg transition text-sm lg:text-base">{loading ? '...' : 'Access Portal'}</button>
         </form>
-        <div className="mt-8 pt-6 border-t border-slate-100">
-            <button onClick={onParent} className="w-full bg-green-50 text-green-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-100 transition"><Search size={18}/> Parent/Student Access</button>
+        <div className="mt-6 lg:mt-8 pt-4 lg:pt-6 border-t border-slate-100">
+            <button onClick={onParent} className="w-full bg-green-50 text-green-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-100 transition text-sm lg:text-base"><Search size={18}/> Parent/Student Access</button>
         </div>
       </div>
     </div>
