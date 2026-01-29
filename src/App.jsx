@@ -15,17 +15,14 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==================== KEEP-ALIVE LOGIC ====================
 /**
- * Simple function to ping Supabase. 
- * Calling this resets the 7-day inactivity timer on the free tier.
+ * Prevents Supabase project from being paused by sending a tiny request
  */
 const keepSupabaseAlive = async () => {
     try {
-        // We perform a very small query on a table that likely exists
-        const { data, error } = await supabase.from('schools').select('id').limit(1);
-        if (error) throw error;
-        console.log("Supabase Heartbeat: Project is active.");
+        await supabase.from('schools').select('id').limit(1);
+        console.log("Supabase Heartbeat: Active");
     } catch (err) {
-        console.warn("Heartbeat failed (likely no tables yet or network error):", err.message);
+        console.warn("Heartbeat failed:", err.message);
     }
 };
 
@@ -366,7 +363,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
 
   return (
     <div className="min-h-screen bg-gray-100 flex font-sans flex-col md:flex-row">
-      {/* Mobile Header */}
       <div className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-20 sticky top-0">
           <h2 className="font-bold flex items-center gap-2"><School size={20}/> Admin</h2>
           <button onClick={() => setSidebarOpen(!sidebarOpen)}><Menu /></button>
@@ -663,7 +659,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
   return (
     <div className="flex h-screen bg-gray-50 flex-col md:flex-row overflow-hidden">
-      {/* Sidebar */}
       <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-30 inset-y-0 left-0 w-80 bg-white border-r flex flex-col transition duration-200`}>
         <div className="p-4 bg-slate-900 text-white">
             <div className="flex justify-between items-center">
@@ -699,10 +694,8 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         </div>
       </div>
       
-      {/* Overlay */}
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setSidebarOpen(false)}></div>}
 
-      {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
         <div className="md:hidden mb-4 flex justify-between items-center"><button onClick={()=>setSidebarOpen(true)}><Menu/></button><h1 className="font-bold">{curClass?.name}</h1></div>
         
@@ -806,6 +799,7 @@ const Auth = ({ onLogin, onParent }) => {
         try {
             if (mode === 'central') {
                 if (form.email === 'oluwatoyin' && form.password === 'Funmilola') onLogin({ role: 'central' });
+                else throw new Error('Invalid Central Admin Credentials');
             } else if (mode === 'school_reg') {
                 const { data: pinData } = await supabase.from('subscription_pins').select('*').eq('code', form.pin).eq('is_used', false).single();
                 if (!pinData) throw new Error('Invalid or Used PIN');
@@ -847,11 +841,16 @@ const Auth = ({ onLogin, onParent }) => {
             <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-md border-t-4 border-blue-600">
                 <div className="text-center mb-6"><div className="bg-blue-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"><School className="text-blue-600" size={24} /></div><h1 className="text-2xl font-bold">Springforth Results</h1></div>
                 <div className="flex flex-wrap justify-center gap-3 mb-6 text-[10px] font-bold uppercase border-b pb-2">
-                    {['login', 'school_reg', 'teacher_reg', 'admin_reg'].map(m => <button key={m} onClick={()=>setMode(m)} className={`capitalize ${mode===m?'text-blue-600 border-b border-blue-600':''}`}>{m.replace('_', ' ')}</button>)}
+                    {/* ADDED 'central' TO THE VISIBLE TABS */}
+                    {['login', 'central', 'school_reg', 'teacher_reg', 'admin_reg'].map(m => <button key={m} onClick={()=>setMode(m)} className={`capitalize ${mode===m?'text-blue-600 border-b border-blue-600':''}`}>{m.replace('_', ' ')}</button>)}
                 </div>
                 <form onSubmit={handleAuth} className="space-y-4">
                     {mode.includes('reg') && <input placeholder="Full Name" className="w-full p-2 border rounded" onChange={e=>setForm({...form, name:e.target.value})} required />}
-                    <input type="email" placeholder="Email" className="w-full p-2 border rounded" onChange={e=>setForm({...form, email:e.target.value})} required />
+                    {mode === 'central' ? (
+                        <input placeholder="Username" className="w-full p-2 border rounded" onChange={e=>setForm({...form, email:e.target.value})} required />
+                    ) : (
+                        <input type="email" placeholder="Email" className="w-full p-2 border rounded" onChange={e=>setForm({...form, email:e.target.value})} required />
+                    )}
                     <input type="password" placeholder="Password" className="w-full p-2 border rounded" onChange={e=>setForm({...form, password:e.target.value})} required />
                     {mode === 'school_reg' && <input placeholder="Subscription PIN" className="w-full p-2 border rounded" onChange={e=>setForm({...form, pin:e.target.value})} required />}
                     {(mode === 'teacher_reg' || mode === 'admin_reg') && <input placeholder="6-Digit Access Code" className="w-full p-2 border rounded" onChange={e=>setForm({...form, schoolCode:e.target.value})} required />}
@@ -927,7 +926,7 @@ const App = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1. PROJECT HEARTBEAT: Run once when the app is loaded to keep Supabase active
+    // RUN HEARTBEAT ON STARTUP
     keepSupabaseAlive();
 
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); if(!session) setLoading(false); });
