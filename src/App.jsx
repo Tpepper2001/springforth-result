@@ -5,7 +5,7 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, User, Download,
-  X, Eye, Trash2, ShieldCheck, Menu, Users, Key, Copy, UserPlus
+  X, Eye, Trash2, ShieldCheck, Menu, Users, UserPlus
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -18,7 +18,7 @@ const keepSupabaseAlive = async () => {
     try {
         await supabase.from('schools').select('id').limit(1);
     } catch (err) {
-        console.warn("Heartbeat failed:", err.message);
+        console.warn("Heartbeat failed");
     }
 };
 
@@ -840,7 +840,7 @@ const ParentPortal = ({ onBack }) => {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-green-50 p-4">
-            <form onSubmit={fetchResult} className="bg-white p-8 rounded shadow w-full max-sm border-t-4 border-green-600">
+            <form onSubmit={fetchResult} className="bg-white p-8 rounded shadow w-full max-w-sm border-t-4 border-green-600">
                 <h2 className="text-xl font-bold text-center mb-6 uppercase tracking-widest">Parent Portal</h2>
                 <input placeholder="Admission No" className="w-full p-2 border rounded mb-3" onChange={e=>setCreds({...creds, adm:e.target.value})} required />
                 <input type="password" placeholder="Access PIN" className="w-full p-2 border rounded mb-4" onChange={e=>setCreds({...creds, pin:e.target.value})} required />
