@@ -1,68 +1,94 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
-import { Loader2, Plus, School, LogOut, Users, Settings, Save, Eye, Trash2, FileText, Star, MessageSquare } from 'lucide-react';
+import { Loader2, Plus, School, LogOut, Users, Settings, Save, Eye, Trash2, FileText, CheckCircle, Search } from 'lucide-react';
 
 const supabaseUrl = 'https://ghlnenmfwlpwlqdrbean.supabase.co'; 
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdobG5lbm1md2xwd2xxZHJiZWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0MTE0MDQsImV4cCI6MjA3OTk4NzQwNH0.rNILUdI035c4wl4kFkZFP4OcIM_t7bNMqktKm25d5Gg'; 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-const BEHAVIORS = ['Cooperation', 'Honesty', 'Self-Control', 'Neatness', 'Punctuality', 'Leadership', 'Responsibility'];
+const BEHAVIORS = ['Cooperation', 'Honesty', 'Self-Control', 'Neatness', 'Punctuality'];
 const RATINGS = ['Excellent', 'Very Good', 'Good', 'Fair', 'Poor'];
+
+// ==================== LOGIC HELPERS ====================
+const getGrade = (obtained, max) => {
+  const percent = (obtained / max) * 100;
+  if (percent >= 90) return { g: 'A', r: 'Excellent', c: 'An outstanding performance. Keep it up!' };
+  if (percent >= 70) return { g: 'B', r: 'Very Good', c: 'A very good result. Room for more improvement.' };
+  if (percent >= 60) return { g: 'C', r: 'Good', c: 'Good performance. Put in more effort.' };
+  if (percent >= 40) return { g: 'D', r: 'Pass', c: 'A fair result. You need to work harder.' };
+  return { g: 'E', r: 'Fail', c: 'Poor performance. Serious improvement is required.' };
+};
 
 // ==================== PDF STYLES ====================
 const pdfStyles = StyleSheet.create({
-  page: { padding: 40, fontSize: 9, fontFamily: 'Helvetica' },
-  header: { textAlign: 'center', marginBottom: 15, borderBottom: 2, paddingBottom: 10 },
-  schoolName: { fontSize: 18, fontWeight: 'bold' },
-  sectionTitle: { fontSize: 10, fontWeight: 'bold', marginTop: 15, backgroundColor: '#f0f0f0', padding: 3 },
+  page: { padding: 40, fontSize: 8, fontFamily: 'Helvetica' },
+  header: { textAlign: 'center', marginBottom: 15, borderBottom: 2, paddingBottom: 5 },
+  schoolName: { fontSize: 20, fontWeight: 'bold' },
+  motto: { fontStyle: 'italic', fontSize: 9, marginBottom: 5 },
   table: { width: '100%', marginTop: 10, borderTop: 1 },
   row: { flexDirection: 'row', borderBottom: 1, padding: 4 },
   cell: { flex: 1, textAlign: 'center' },
-  commentBox: { marginTop: 10, padding: 5, border: 1, borderColor: '#ccc', fontStyle: 'italic' }
+  footer: { marginTop: 20, flexDirection: 'row', justifyContent: 'space-between' }
 });
 
-const ResultPDF = ({ school, student, results, comments }) => {
-  const config = school?.assessment_config || [];
-  const behaviors = comments?.behaviors || {};
+const ResultPDF = ({ school, student, results, comments, type = 'full' }) => {
+  const allConfig = school?.assessment_config || [];
+  const config = type === 'ca' ? allConfig.filter(c => !c.name.toLowerCase().includes('exam')) : allConfig;
+  const maxPossible = config.reduce((s, f) => s + parseInt(f.max), 0);
   
+  let totalObtained = 0;
+  results.forEach(r => {
+      totalObtained += config.reduce((acc, f) => acc + (parseFloat(r.scores[f.code]) || 0), 0);
+  });
+  const avg = (totalObtained / (results.length * maxPossible)) * 100;
+
   return (
     <Document>
       <Page size="A4" style={pdfStyles.page}>
         <View style={pdfStyles.header}>
           <Text style={pdfStyles.schoolName}>{school?.name}</Text>
-          <Text>{school?.address}</Text>
-          <Text>{school?.current_term} Report - {school?.current_session}</Text>
+          <Text style={pdfStyles.motto}>{school?.motto}</Text>
+          <Text>{school?.address} | {school?.contact_info}</Text>
+          <Text style={{ marginTop: 5, fontWeight: 'bold' }}>{type === 'ca' ? 'MID-TERM PROGRESS REPORT' : 'TERMINAL REPORT'}</Text>
         </View>
-        <Text>Student: {student?.name} | Admission: {student?.admission_no}</Text>
 
-        <Text style={pdfStyles.sectionTitle}>ACADEMIC PERFORMANCE</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
+          <View><Text>Student: {student?.name}</Text><Text>ID: {student?.admission_no}</Text></View>
+          <View style={{ textAlign: 'right' }}><Text>Session: {school?.current_session}</Text><Text>Term: {school?.current_term}</Text></View>
+        </View>
+
         <View style={pdfStyles.table}>
           <View style={[pdfStyles.row, { backgroundColor: '#eee' }]}>
-            <Text style={{ width: 120 }}>Subject</Text>
+            <Text style={{ width: 120 }}>SUBJECT</Text>
             {config.map(c => <Text key={c.code} style={pdfStyles.cell}>{c.name}</Text>)}
-            <Text style={pdfStyles.cell}>Total</Text>
+            <Text style={pdfStyles.cell}>TOTAL</Text>
+            <Text style={pdfStyles.cell}>GRADE</Text>
           </View>
-          {results.map(r => (
-            <View key={r.id} style={pdfStyles.row}>
-              <Text style={{ width: 120 }}>{r.subjects?.name}</Text>
-              {config.map(c => <Text key={c.code} style={pdfStyles.cell}>{r.scores[c.code] || 0}</Text>)}
-              <Text style={pdfStyles.cell}>{r.total}</Text>
-            </View>
-          ))}
+          {results.map(r => {
+            const subTotal = config.reduce((acc, f) => acc + (parseFloat(r.scores[f.code]) || 0), 0);
+            return (
+              <View key={r.id} style={pdfStyles.row}>
+                <Text style={{ width: 120 }}>{r.subjects?.name}</Text>
+                {config.map(c => <Text key={c.code} style={pdfStyles.cell}>{r.scores[c.code] || 0}</Text>)}
+                <Text style={pdfStyles.cell}>{subTotal}</Text>
+                <Text style={pdfStyles.cell}>{getGrade(subTotal, maxPossible).g}</Text>
+              </View>
+            );
+          })}
         </View>
 
-        <Text style={pdfStyles.sectionTitle}>PSYCHOMOTOR & BEHAVIOR</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 5 }}>
-          {BEHAVIORS.map(b => (
-            <Text key={b} style={{ width: '50%', marginBottom: 3 }}>{b}: {behaviors[b] || 'Good'}</Text>
-          ))}
+        <View style={{ marginTop: 10 }}><Text>Class Average: {avg.toFixed(2)}%</Text></View>
+
+        <View style={{ marginTop: 20 }}>
+            <Text style={{ fontWeight: 'bold', borderBottom: 1 }}>REMARKS</Text>
+            <Text style={{ marginTop: 5 }}>Teacher: {type === 'ca' ? comments?.midterm_tutor_comment : comments?.tutor_comment}</Text>
+            <Text style={{ marginTop: 5 }}>Principal: {comments?.principal_comment || 'Satisfactory.'}</Text>
         </View>
 
-        <Text style={pdfStyles.sectionTitle}>TEACHER'S REMARKS</Text>
-        <View style={pdfStyles.commentBox}>
-           <Text>Mid-term: {comments?.midterm_tutor_comment || 'No comment.'}</Text>
-           <Text style={{ marginTop: 5 }}>Final: {comments?.tutor_comment || 'No comment.'}</Text>
+        <View style={pdfStyles.footer}>
+            <View style={{ borderTop: 1, width: 100, textAlign: 'center' }}><Text>Teacher's Sign</Text></View>
+            <View style={{ borderTop: 1, width: 100, textAlign: 'center' }}><Text>Principal's Sign</Text></View>
         </View>
       </Page>
     </Document>
@@ -79,23 +105,22 @@ const Dashboard = ({ profile, onLogout }) => {
   const [subjects, setSubjects] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [scores, setScores] = useState({});
-  const [commentData, setCommentData] = useState({ tutor_comment: '', midterm_tutor_comment: '', behaviors: {} });
+  const [commentData, setCommentData] = useState({ behaviors: {} });
   const [studentResults, setStudentResults] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [previewing, setPreviewing] = useState(false);
+  const [previewMode, setPreviewMode] = useState(null);
 
-  const fetchBaseData = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
     setSchool(s);
     const { data: cls } = await supabase.from('classes').select('*').eq('school_id', profile.school_id).order('name');
     setClassList(cls || []);
   }, [profile.school_id]);
 
-  useEffect(() => { fetchBaseData(); }, [fetchBaseData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const loadClass = async (id) => {
     setSelectedClassId(id);
-    setSelectedStudent(null);
     const { data: stu } = await supabase.from('students').select('*').eq('class_id', id).order('name');
     setStudents(stu || []);
     const { data: sub } = await supabase.from('subjects').select('*').eq('class_id', id).order('name');
@@ -106,129 +131,125 @@ const Dashboard = ({ profile, onLogout }) => {
     setSelectedStudent(stu);
     const { data: res } = await supabase.from('results').select('*, subjects(name)').eq('student_id', stu.id);
     const { data: comm } = await supabase.from('comments').select('*').eq('student_id', stu.id).maybeSingle();
-    
-    const sm = {};
-    res?.forEach(r => sm[r.subject_id] = r.scores);
-    setScores(sm);
+    setScores(res?.reduce((acc, r) => ({ ...acc, [r.subject_id]: r.scores }), {}) || {});
     setStudentResults(res || []);
-    setCommentData(comm || { tutor_comment: '', midterm_tutor_comment: '', behaviors: {} });
+    setCommentData(comm || { behaviors: {}, submission_status: 'draft' });
   };
 
-  const handleSave = async () => {
-    if (!selectedStudent) return;
+  const handleSave = async (status = 'draft') => {
     setSaving(true);
     const updates = subjects.map(s => ({
-      student_id: selectedStudent.id, subject_id: s.id,
-      scores: scores[s.id] || {},
+      student_id: selectedStudent.id, subject_id: s.id, scores: scores[s.id] || {},
       total: Object.values(scores[s.id] || {}).reduce((a, b) => a + (parseFloat(b) || 0), 0)
     }));
-    
     await supabase.from('results').delete().eq('student_id', selectedStudent.id);
     await supabase.from('results').insert(updates);
     
+    // Auto Comment Logic
+    const config = school.assessment_config || [];
+    const max = config.reduce((a, b) => a + parseInt(b.max), 0);
+    let stTotal = updates.reduce((a, b) => a + b.total, 0);
+    const stAvg = (stTotal / (updates.length * max)) * 100;
+    const suggested = getGrade(stAvg, 100).c;
+
     await supabase.from('comments').upsert({
       student_id: selectedStudent.id, school_id: school.id,
-      tutor_comment: commentData.tutor_comment || '',
-      midterm_tutor_comment: commentData.midterm_tutor_comment || '',
-      behaviors: commentData.behaviors || {}
+      tutor_comment: commentData.tutor_comment || suggested,
+      midterm_tutor_comment: commentData.midterm_tutor_comment || suggested,
+      principal_comment: commentData.principal_comment,
+      behaviors: commentData.behaviors,
+      submission_status: status
     });
-
-    setSaving(false);
-    alert("Record Saved!");
-    loadStudent(selectedStudent);
+    setSaving(false); alert("Success!"); loadStudent(selectedStudent);
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 text-slate-800">
-      {/* SIDEBAR */}
-      <div className="w-64 bg-slate-900 text-white flex flex-col p-4">
-        <div className="flex items-center gap-2 font-bold text-xl mb-6"><School /> Results</div>
-        
+    <div className="flex h-screen bg-slate-50 text-slate-800">
+      <div className="w-64 bg-slate-900 text-white flex flex-col p-4 shadow-xl">
+        <div className="font-bold text-xl mb-8 flex items-center gap-2 border-b border-slate-700 pb-4"><School className="text-blue-400"/> Springforth</div>
         <div className="mb-6">
-          <label className="text-[10px] text-gray-400 font-bold uppercase">Class Manager</label>
-          <select className="w-full bg-slate-800 p-2 rounded mt-1 text-sm border-none outline-none" value={selectedClassId} onChange={(e) => loadClass(e.target.value)}>
+          <label className="text-[10px] text-slate-400 font-bold uppercase">Active Class</label>
+          <select className="w-full bg-slate-800 p-2 rounded mt-1 border-none text-sm outline-none" value={selectedClassId} onChange={(e) => loadClass(e.target.value)}>
             <option value="">Select Class</option>
             {classList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <button onClick={async() => {
-            const n = prompt("New Class Name:");
-            if(n) { await supabase.from('classes').insert({name: n, school_id: school.id}); fetchBaseData(); }
-          }} className="text-[10px] text-blue-400 mt-2 hover:underline">+ ADD NEW CLASS</button>
         </div>
-
         <div className="flex-1 overflow-auto">
-          <label className="text-[10px] text-gray-400 font-bold uppercase">Students List</label>
           {students.map(s => (
-            <div key={s.id} onClick={() => loadStudent(s)} className={`p-2 cursor-pointer rounded text-sm mt-1 flex justify-between group ${selectedStudent?.id === s.id ? 'bg-blue-600 text-white font-bold' : 'hover:bg-slate-800'}`}>
+            <div key={s.id} onClick={() => loadStudent(s)} className={`p-2 cursor-pointer rounded text-sm mb-1 flex justify-between items-center ${selectedStudent?.id === s.id ? 'bg-blue-600' : 'hover:bg-slate-800'}`}>
               <span className="truncate">{s.name}</span>
-              <button onClick={async(e) => { e.stopPropagation(); if(window.confirm("Delete Student?")) { await supabase.from('students').delete().eq('id', s.id); loadClass(selectedClassId); } }} className="hidden group-hover:block"><Trash2 size={14}/></button>
+              {commentData?.submission_status === 'approved' && <CheckCircle size={14} className="text-green-400" />}
             </div>
           ))}
-          {selectedClassId && <button onClick={async() => {
-            const n = prompt("Student Full Name:");
-            if(n) { await supabase.from('students').insert({name: n, class_id: selectedClassId, school_id: school.id, admission_no: `ADM-${Date.now()}`}); loadClass(selectedClassId); }
-          }} className="text-[10px] text-blue-400 mt-4 block">+ REGISTER STUDENT</button>}
         </div>
-
-        <div className="border-t border-slate-700 pt-4 space-y-1">
-          {profile.role === 'admin' && <button onClick={() => setActiveTab('settings')} className={`w-full text-left p-2 text-sm flex items-center gap-2 rounded ${activeTab === 'settings' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Settings size={16}/> School Profile</button>}
-          <button onClick={onLogout} className="w-full text-left p-2 text-sm text-red-400 flex items-center gap-2 hover:bg-slate-800 rounded"><LogOut size={16}/> Logout</button>
+        <div className="border-t border-slate-700 pt-4 space-y-2">
+          {profile.role === 'admin' && <button onClick={() => setActiveTab('settings')} className="w-full text-left p-2 text-sm flex items-center gap-2 hover:bg-slate-800 rounded transition"><Settings size={16}/> School Profile</button>}
+          <button onClick={onLogout} className="w-full text-left p-2 text-sm text-red-400 flex items-center gap-2 hover:bg-slate-800 rounded transition"><LogOut size={16}/> Logout</button>
         </div>
       </div>
 
       <div className="flex-1 overflow-auto p-8">
-        {!selectedStudent && activeTab !== 'settings' ? (
-          <div className="h-full flex flex-col items-center justify-center text-gray-300">
-            <Users size={64}/> <p className="mt-2 font-medium">Select a class and student from the sidebar</p>
+        {activeTab === 'settings' ? (
+          <div className="bg-white p-8 rounded-xl shadow-sm border max-w-2xl">
+            <h2 className="text-2xl font-bold mb-6">School Configuration</h2>
+            <form onSubmit={async(e)=>{
+              e.preventDefault(); const fd=new FormData(e.target);
+              await supabase.from('schools').update({
+                  name: fd.get('n'), motto: fd.get('m'), address: fd.get('a'), 
+                  contact_info: fd.get('c'), current_term: fd.get('t'), current_session: fd.get('s')
+              }).eq('id', school.id);
+              alert("School profile updated!"); fetchData();
+            }} className="space-y-4">
+              <input name="n" defaultValue={school?.name} placeholder="School Name" className="w-full border p-2 rounded" />
+              <input name="m" defaultValue={school?.motto} placeholder="School Motto" className="w-full border p-2 rounded font-italic" />
+              <input name="a" defaultValue={school?.address} placeholder="Address" className="w-full border p-2 rounded" />
+              <input name="c" defaultValue={school?.contact_info} placeholder="Contact Info (Phone/Email)" className="w-full border p-2 rounded" />
+              <div className="grid grid-cols-2 gap-4">
+                <input name="t" defaultValue={school?.current_term} placeholder="Term" className="border p-2 rounded" />
+                <input name="s" defaultValue={school?.current_session} placeholder="Session" className="border p-2 rounded" />
+              </div>
+              <button className="bg-blue-600 text-white px-8 py-2 rounded-lg font-bold">Update School</button>
+            </form>
           </div>
-        ) : activeTab === 'settings' ? (
-          <div className="bg-white p-8 rounded shadow max-w-xl">
-             <h2 className="text-xl font-bold mb-4">Edit School Information</h2>
-             <form onSubmit={async(e)=>{
-               e.preventDefault(); const fd=new FormData(e.target);
-               await supabase.from('schools').update({name: fd.get('n'), address: fd.get('a'), current_term: fd.get('t'), current_session: fd.get('s')}).eq('id', school.id);
-               alert("School Information Updated!"); fetchBaseData();
-             }} className="space-y-4">
-               <div><label className="text-xs font-bold text-gray-500">School Name</label><input name="n" defaultValue={school?.name} className="w-full border p-2 rounded" /></div>
-               <div><label className="text-xs font-bold text-gray-500">Address</label><input name="a" defaultValue={school?.address} className="w-full border p-2 rounded" /></div>
-               <div className="grid grid-cols-2 gap-4">
-                 <div><label className="text-xs font-bold text-gray-500">Term</label><input name="t" defaultValue={school?.current_term} className="border p-2 rounded w-full" /></div>
-                 <div><label className="text-xs font-bold text-gray-500">Session</label><input name="s" defaultValue={school?.current_session} className="border p-2 rounded w-full" /></div>
-               </div>
-               <button className="bg-blue-600 text-white px-6 py-2 rounded font-bold">Save Profile</button>
-             </form>
-          </div>
+        ) : !selectedStudent ? (
+          <div className="h-full flex flex-col items-center justify-center text-slate-300"><Users size={80}/><p className="mt-4 font-medium">Select a student from the sidebar</p></div>
         ) : (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center bg-white p-4 rounded shadow border-l-4 border-blue-600">
-              <div><h1 className="text-xl font-bold">{selectedStudent.name}</h1><p className="text-xs text-gray-500">Adm No: {selectedStudent.admission_no}</p></div>
-              <div className="flex gap-2">
-                <button onClick={() => setPreviewing(true)} className="bg-slate-100 px-4 py-2 rounded flex items-center gap-2 font-bold hover:bg-slate-200"><Eye size={18}/> Preview</button>
-                <button onClick={handleSave} disabled={saving} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 font-bold hover:bg-green-700">
-                  {saving ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>} Save Record
+          <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-l-8 border-l-blue-600">
+              <div>
+                <h1 className="text-2xl font-bold">{selectedStudent.name}</h1>
+                <span className={`text-[10px] px-2 py-1 rounded uppercase font-bold ${commentData.submission_status === 'approved' ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
+                    {commentData.submission_status}
+                </span>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setPreviewMode('ca')} className="bg-slate-100 px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-200 transition">CA Report</button>
+                <button onClick={() => setPreviewMode('full')} className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-200 transition">Full Report</button>
+                <button onClick={() => handleSave(profile.role === 'admin' ? 'approved' : 'pending')} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold text-sm hover:shadow-lg transition">
+                    {saving ? <Loader2 className="animate-spin" /> : (profile.role === 'admin' ? 'Approve & Save' : 'Submit for Approval')}
                 </button>
               </div>
             </div>
 
-            <div className="flex gap-4 border-b">
-              {[ {id: 'scores', icon: <FileText size={16}/>, label: 'Results'}, {id: 'psychomotor', icon: <Star size={16}/>, label: 'Behavior'}, {id: 'comments', icon: <MessageSquare size={16}/>, label: 'Remarks'} ].map(t => (
-                <button key={t.id} onClick={() => { setActiveTab(t.id); }} className={`pb-2 px-4 font-bold text-sm flex items-center gap-2 ${activeTab === t.id ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400'}`}>{t.icon} {t.label}</button>
+            <div className="flex gap-6 border-b text-sm font-bold text-slate-400">
+              {['scores', 'traits', 'remarks'].map(t => (
+                <button key={t} onClick={() => setActiveTab(t)} className={`pb-2 px-2 capitalize transition ${activeTab === t ? 'border-b-2 border-blue-600 text-blue-600' : 'hover:text-slate-600'}`}>{t}</button>
               ))}
             </div>
 
             {activeTab === 'scores' && (
-              <div className="bg-white rounded shadow p-6">
-                <table className="w-full border-collapse">
+              <div className="bg-white rounded-xl shadow-sm border p-6 overflow-hidden">
+                <table className="w-full">
                   <thead>
-                    <tr className="bg-gray-50 text-left"><th className="p-3 border">Subject</th>{school?.assessment_config?.map(c=><th key={c.code} className="p-3 border text-center">{c.name} ({c.max})</th>)}</tr>
+                    <tr className="bg-slate-50 text-left border-b"><th className="p-4">Subject</th>{school?.assessment_config?.map(c=><th key={c.code} className="p-4 text-center">{c.name}</th>)}</tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y">
                     {subjects.map(sub => (
-                      <tr key={sub.id}>
-                        <td className="p-3 border font-medium">{sub.name}</td>
+                      <tr key={sub.id} className="hover:bg-slate-50 transition">
+                        <td className="p-4 font-semibold">{sub.name}</td>
                         {school?.assessment_config?.map(c => (
-                          <td key={c.code} className="p-3 border">
-                            <input type="number" className="w-full text-center outline-none bg-transparent" value={scores[sub.id]?.[c.code] || ''} 
+                          <td key={c.code} className="p-4 text-center">
+                            <input type="number" className="w-20 bg-slate-100 p-2 rounded text-center outline-none focus:ring-2 focus:ring-blue-400 transition" value={scores[sub.id]?.[c.code] || ''} 
                               onChange={(e)=>setScores({...scores, [sub.id]: {...(scores[sub.id]||{}), [c.code]: e.target.value}})}/>
                           </td>
                         ))}
@@ -236,38 +257,35 @@ const Dashboard = ({ profile, onLogout }) => {
                     ))}
                   </tbody>
                 </table>
-                <button onClick={async() => {
-                  const n = prompt("Enter Subject Name (Applied to Class):");
-                  if(n) { await supabase.from('subjects').insert({name: n, class_id: selectedClassId}); loadClass(selectedClassId); }
-                }} className="mt-4 text-blue-600 font-bold flex items-center gap-1"><Plus size={16}/> Add Subject</button>
               </div>
             )}
 
-            {activeTab === 'psychomotor' && (
-              <div className="bg-white p-6 rounded shadow max-w-md">
-                <h3 className="font-bold mb-4 flex items-center gap-2 text-slate-700">Psychomotor Traits</h3>
-                {BEHAVIORS.map(b => (
-                  <div key={b} className="flex justify-between items-center py-2 border-b">
-                    <span className="text-sm">{b}</span>
-                    <select className="border p-1 text-xs rounded bg-gray-50" value={commentData.behaviors?.[b] || 'Good'} 
-                      onChange={(e)=>setCommentData({...commentData, behaviors: {...(commentData.behaviors || {}), [b]: e.target.value}})}>
-                      {RATINGS.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeTab === 'comments' && (
-              <div className="bg-white p-6 rounded shadow space-y-4">
-                <h3 className="font-bold text-slate-700">Remarks</h3>
+            {activeTab === 'traits' && (
+              <div className="bg-white p-8 rounded-xl shadow-sm border grid grid-cols-2 gap-8">
                 <div>
-                  <label className="text-xs font-bold text-gray-400">MID-TERM REMARK</label>
-                  <textarea className="w-full border p-2 rounded mt-1 h-24 outline-none" value={commentData.midterm_tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, midterm_tutor_comment: e.target.value})} />
+                  <h3 className="font-bold mb-4 text-slate-500">BEHAVIORAL RATINGS</h3>
+                  {BEHAVIORS.map(b => (
+                    <div key={b} className="flex justify-between items-center py-3 border-b border-slate-100 last:border-none">
+                      <span className="text-sm font-medium">{b}</span>
+                      <select className="bg-slate-50 border p-1 rounded text-xs" value={commentData.behaviors?.[b] || 'Good'} 
+                        onChange={(e)=>setCommentData({...commentData, behaviors: {...(commentData.behaviors || {}), [b]: e.target.value}})}>
+                        {RATINGS.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-400">FINAL REMARK</label>
-                  <textarea className="w-full border p-2 rounded mt-1 h-24 outline-none" value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
+              </div>
+            )}
+
+            {activeTab === 'remarks' && (
+              <div className="grid grid-cols-2 gap-6">
+                <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
+                  <label className="text-xs font-bold text-slate-400 uppercase">Class Teacher's Remark</label>
+                  <textarea className="w-full border-2 p-3 rounded-lg h-32 focus:border-blue-500 outline-none" value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
+                  <label className="text-xs font-bold text-slate-400 uppercase">Headmistress's Remark</label>
+                  <textarea className="w-full border-2 p-3 rounded-lg h-32 focus:border-blue-500 outline-none" disabled={profile.role !== 'admin'} value={commentData.principal_comment || ''} onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})} />
                 </div>
               </div>
             )}
@@ -275,23 +293,58 @@ const Dashboard = ({ profile, onLogout }) => {
         )}
       </div>
 
-      {previewing && (
-        <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col">
-          <div className="p-4 bg-white flex justify-between items-center">
-            <button onClick={() => setPreviewing(false)} className="font-bold text-slate-700">← Back</button>
-            <PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={studentResults} comments={commentData} />} fileName={`${selectedStudent.name}_Result.pdf`}>
-                <button className="bg-blue-600 text-white px-4 py-2 rounded font-bold">Download PDF</button>
+      {previewMode && (
+        <div className="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-sm flex flex-col p-4">
+          <div className="bg-white p-4 rounded-t-xl flex justify-between items-center shadow-2xl">
+            <button onClick={() => setPreviewMode(null)} className="font-bold text-slate-600 hover:text-red-500 transition">✕ Close Preview</button>
+            <PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={studentResults} comments={commentData} type={previewMode} />} fileName={`${selectedStudent.name}.pdf`}>
+              <button className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700">Download Result</button>
             </PDFDownloadLink>
           </div>
-          <PDFViewer className="flex-1 w-full"><ResultPDF school={school} student={selectedStudent} results={studentResults} comments={commentData} /></PDFViewer>
+          <PDFViewer className="flex-1 w-full rounded-b-xl overflow-hidden"><ResultPDF school={school} student={selectedStudent} results={studentResults} comments={commentData} type={previewMode} /></PDFViewer>
         </div>
       )}
     </div>
   );
 };
 
-// ==================== AUTH ====================
-const Auth = () => {
+// ==================== AUTH & PORTALS ====================
+const ParentPortal = ({ onBack }) => {
+    const [id, setId] = useState('');
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(false);
+
+    const check = async () => {
+        setLoading(true);
+        const { data: stu, error } = await supabase.from('students').select('*, schools(*), classes(*), results(*, subjects(*)), comments(*)').eq('admission_no', id).maybeSingle();
+        if (stu && stu.comments?.[0]?.submission_status === 'approved') {
+            setData(stu);
+        } else {
+            alert(error ? "Error connecting" : "Result not yet published/Approved by Admin.");
+        }
+        setLoading(false);
+    };
+
+    if (data) return (
+        <div className="fixed inset-0 z-50 bg-white"><div className="p-4 border-b"><button onClick={()=>setData(null)} className="font-bold">← Back</button></div>
+        <PDFViewer className="w-full h-screen"><ResultPDF school={data.schools} student={data} results={data.results} comments={data.comments[0]} /></PDFViewer></div>
+    );
+
+    return (
+        <div className="min-h-screen bg-green-50 flex items-center justify-center p-4">
+            <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-sm text-center">
+                <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600"><Search size={32}/></div>
+                <h2 className="text-2xl font-bold text-slate-800">Parent Access</h2>
+                <p className="text-slate-500 text-sm mb-6">Enter Admission Number to view approved result</p>
+                <input placeholder="ADM-XXXXX" className="w-full border-2 p-3 rounded-xl mb-4 text-center font-bold tracking-widest outline-none focus:border-green-500" onChange={e=>setId(e.target.value)} />
+                <button onClick={check} className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition shadow-lg">{loading ? 'Checking...' : 'View Report Card'}</button>
+                <button onClick={onBack} className="mt-6 text-slate-400 text-sm hover:underline">Back to Staff Login</button>
+            </div>
+        </div>
+    );
+};
+
+const Auth = ({ onParent }) => {
   const [mode, setMode] = useState('login');
   const [loading, setLoading] = useState(false);
   const [schools, setSchools] = useState([]);
@@ -308,13 +361,12 @@ const Auth = () => {
         const { data: s, error: se } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: form.name }).select().single();
         if (se) throw se;
         await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: s.id });
-        alert("Success! Please Login."); setMode('login');
+        alert("Success!"); setMode('login');
       } else if (mode === 'teacher_reg') {
         const { data: auth, error: ae } = await supabase.auth.signUp({ email: form.email, password: form.password });
         if (ae) throw ae;
-        if (!form.schoolId) throw new Error("Please Select a school");
         await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'teacher', school_id: form.schoolId });
-        alert("Success! Please Login."); setMode('login');
+        alert("Success!"); setMode('login');
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
         if (error) throw error;
@@ -324,40 +376,44 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-      <div className="bg-white p-8 rounded shadow w-full max-w-md border-t-4 border-blue-600">
-        <h1 className="text-2xl font-bold text-center mb-6">Springforth Results</h1>
-        <div className="flex gap-4 mb-6 text-xs font-bold border-b pb-2">
+    <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border-t-8 border-blue-600">
+        <h1 className="text-3xl font-black text-center mb-8 text-slate-800">Springforth</h1>
+        <div className="flex gap-4 mb-8 text-[10px] font-black uppercase tracking-widest border-b pb-2">
           {['login', 'school_reg', 'teacher_reg'].map(m => (
-            <button key={m} onClick={() => setMode(m)} className={mode === m ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-400'}>{m.replace('_',' ')}</button>
+            <button key={m} onClick={() => setMode(m)} className={mode === m ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}>{m.replace('_',' ')}</button>
           ))}
         </div>
         <form onSubmit={handleAuth} className="space-y-4">
-          {mode !== 'login' && <input placeholder="Full Name" className="w-full p-2 border rounded" onChange={e => setForm({...form, name: e.target.value})} required />}
-          <input type="email" placeholder="Email" className="w-full p-2 border rounded" onChange={e => setForm({...form, email: e.target.value})} required />
-          <input type="password" placeholder="Password" className="w-full p-2 border rounded" onChange={e => setForm({...form, password: e.target.value})} required />
+          {mode !== 'login' && <input placeholder="Full Name" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition" onChange={e => setForm({...form, name: e.target.value})} required />}
+          <input type="email" placeholder="Email Address" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition" onChange={e => setForm({...form, email: e.target.value})} required />
+          <input type="password" placeholder="Password" className="w-full p-3 border-2 rounded-xl outline-none focus:border-blue-500 transition" onChange={e => setForm({...form, password: e.target.value})} required />
           {mode === 'teacher_reg' && (
-            <select className="w-full p-2 border rounded bg-white" onChange={e => setForm({...form, schoolId: e.target.value})} required>
+            <select className="w-full p-3 border-2 rounded-xl bg-white outline-none" onChange={e => setForm({...form, schoolId: e.target.value})} required>
               <option value="">Select School</option>
               {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
-          <button className="w-full bg-blue-600 text-white py-2 rounded font-bold">{loading ? '...' : 'Access Portal'}</button>
+          <button className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg transition">{loading ? '...' : 'Access Portal'}</button>
         </form>
+        <div className="mt-8 pt-6 border-t border-slate-100">
+            <button onClick={onParent} className="w-full bg-green-50 text-green-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-100 transition"><Search size={18}/> Parent/Student Access</button>
+        </div>
       </div>
     </div>
   );
 };
 
-// ==================== ROOT ====================
+// ==================== APP ROOT ====================
 const App = () => {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [view, setView] = useState('auth');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => { setSession(s); if(!s) setLoading(false); });
-    supabase.auth.onAuthStateChange((_event, s) => { setSession(s); if(!s) setProfile(null); });
+    supabase.auth.onAuthStateChange((_event, s) => { setSession(s); if(!s) { setProfile(null); setView('auth'); } });
   }, []);
 
   useEffect(() => {
@@ -366,9 +422,10 @@ const App = () => {
     }
   }, [session]);
 
-  if (loading) return <div className="h-screen flex items-center justify-center bg-gray-50"><Loader2 className="animate-spin text-blue-600" size={40}/></div>;
-  if (!session) return <Auth />;
-  if (!profile) return <div className="p-20 text-center"><button onClick={() => supabase.auth.signOut()} className="bg-red-500 text-white p-2 rounded">Session Broken. Logout & Retry</button></div>;
+  if (loading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-blue-600" size={48}/></div>;
+  if (view === 'parent') return <ParentPortal onBack={() => setView('auth')} />;
+  if (!session) return <Auth onParent={() => setView('parent')} />;
+  if (!profile) return <div className="p-20 text-center"><button onClick={() => supabase.auth.signOut()} className="bg-red-500 text-white p-3 rounded-xl">Connection Error. Sign Out & Retry</button></div>;
 
   return <Dashboard profile={profile} onLogout={() => supabase.auth.signOut()} />;
 };
