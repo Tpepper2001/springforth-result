@@ -243,20 +243,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
   const [newConfig, setNewConfig] = useState({ name: '', max: 10, code: '' });
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  useEffect(() => { fetchSchoolData(); }, []);
-
-  const fetchSchoolData = async () => {
-    const { data: s } = await supabase.from('schools').select('*').eq('owner_id', profile.id).single();
-    if(!s && profile.school_id) {
-       const { data: subS } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
-       setSchool(subS);
-       if(subS) await loadRelated(subS.id);
-    } else {
-       setSchool(s);
-       if(s) await loadRelated(s.id);
-    }
-  };
-
   const loadRelated = async (schoolId) => {
       const { data: cls } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', schoolId);
       setClasses(cls || []);
@@ -267,6 +253,20 @@ const SchoolAdmin = ({ profile, onLogout }) => {
       const { data: adm } = await supabase.from('profiles').select('*').eq('school_id', schoolId).eq('role', 'admin');
       setAdmins(adm || []);
   };
+
+  const fetchSchoolData = useCallback(async () => {
+    const { data: s } = await supabase.from('schools').select('*').eq('owner_id', profile.id).single();
+    if(!s && profile.school_id) {
+       const { data: subS } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
+       setSchool(subS);
+       if(subS) await loadRelated(subS.id);
+    } else {
+       setSchool(s);
+       if(s) await loadRelated(s.id);
+    }
+  }, [profile.id, profile.school_id]);
+
+  useEffect(() => { fetchSchoolData(); }, [fetchSchoolData]);
 
   const inviteAdmin = async (e) => {
       e.preventDefault();
