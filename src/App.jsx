@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
-  Document, Page, Text, View, StyleSheet, PDFViewer, Image as PDFImage, PDFDownloadLink
+  Document, Page, Text, View, StyleSheet, PDFViewer, Image as PDFImage
 } from '@react-pdf/renderer';
 import {
-  LayoutDashboard, LogOut, Loader2, Plus, School, User, Download,
-  X, Eye, Trash2, ShieldCheck, Menu, Users, UserPlus
+  Loader2, Plus, School, LogOut
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -14,9 +13,6 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==================== HELPERS ====================
-const BEHAVIORAL_TRAITS = ['COOPERATION', 'LEADERSHIP', 'HONESTY', 'SELF DISCIPLINE', 'RESPECT', 'RESPONSIBILITY', 'EMPATHY', 'PUNCTUALITY', 'NEATNESS', 'INITIATIVE'];
-const RATINGS = ['Excellent', 'Very Good', 'Good', 'Fair', 'Poor'];
-
 const calculateGrade = (obtained, maxPossible) => {
   if (!maxPossible || maxPossible === 0) return { grade: '-', remark: '-' };
   const percentage = (obtained / maxPossible) * 100;
@@ -76,7 +72,7 @@ const pdfStyles = StyleSheet.create({
   cell: { padding: 4, fontSize: 9 }
 });
 
-const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = [], reportType = 'full', logoBase64 }) => {
+const ResultPDF = ({ school, student, results, classInfo, reportType = 'full', logoBase64 }) => {
   const config = school.assessment_config || [];
   const maxPossibleScore = config.reduce((sum, f) => sum + parseInt(f.max), 0);
   const processedResults = results.map(r => {
@@ -123,14 +119,11 @@ const SchoolAdmin = ({ profile, onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [school, setSchool] = useState(null);
   const [students, setStudents] = useState([]);
-  const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
 
   const fetchData = useCallback(async () => {
     const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
     setSchool(s);
-    const { data: cls } = await supabase.from('classes').select('*, profiles(full_name)').eq('school_id', s.id);
-    setClasses(cls || []);
     const { data: stu } = await supabase.from('students').select('*, classes(name), comments(submission_status)').eq('school_id', s.id);
     setStudents(stu || []);
     const { data: tch } = await supabase.from('profiles').select('*').eq('school_id', s.id).eq('role', 'teacher');
@@ -146,7 +139,7 @@ const SchoolAdmin = ({ profile, onLogout }) => {
         <button onClick={()=>setActiveTab('dashboard')} className={`w-full text-left p-2 rounded ${activeTab==='dashboard'?'bg-blue-600':''}`}>Dashboard</button>
         <button onClick={()=>setActiveTab('students')} className={`w-full text-left p-2 rounded ${activeTab==='students'?'bg-blue-600':''}`}>Students</button>
         <button onClick={()=>setActiveTab('classes')} className={`w-full text-left p-2 rounded ${activeTab==='classes'?'bg-blue-600':''}`}>Classes</button>
-        <button onClick={onLogout} className="text-red-400 mt-auto block">Logout</button>
+        <button onClick={onLogout} className="flex items-center gap-2 text-red-400 mt-auto w-full"><LogOut size={18}/> Logout</button>
       </div>
       <div className="flex-1 p-8 overflow-auto">
         {activeTab === 'dashboard' && <h1 className="text-2xl font-bold">Welcome to {school?.name}</h1>}
@@ -208,7 +201,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
   useEffect(() => {
     const init = async () => {
-        const { data: cls } = await supabase.from('classes').select('*, schools(*)').eq('form_tutor_id', profile.id).limit(1).single();
+        const { data: cls } = await supabase.from('classes').select('*, schools(*)').eq('form_tutor_id', profile.id).maybeSingle();
         if(cls) {
             setCurClass(cls);
             setSchool(cls.schools);
@@ -241,21 +234,21 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                     const { data } = await supabase.from('students').select('*').eq('class_id', curClass.id);
                     setStudents(data);
                 }
-            }} className="w-full bg-blue-600 text-white py-2 rounded text-sm">+ Add Student</button>
+            }} className="w-full bg-blue-600 text-white py-2 rounded text-sm flex items-center justify-center gap-2"><Plus size={16}/> Add Student</button>
         </div>
         <div className="flex-1 overflow-auto">
             {students.map(s => (
                 <div key={s.id} onClick={()=>loadStudent(s)} className={`p-3 border-b cursor-pointer ${selectedStudent?.id===s.id?'bg-blue-50 border-l-4 border-blue-600':''}`}>{s.name}</div>
             ))}
         </div>
-        <button onClick={onLogout} className="p-4 text-red-500 border-t">Logout</button>
+        <button onClick={onLogout} className="p-4 text-red-500 border-t flex items-center gap-2"><LogOut size={16}/> Logout</button>
       </div>
       <div className="flex-1 p-8 overflow-auto">
         {!selectedStudent ? <div className="text-center text-gray-400 mt-20">Select a student</div> : (
             <div className="space-y-6">
                 <div className="flex justify-between items-center">
                     <h1 className="text-2xl font-bold">{selectedStudent.name}</h1>
-                    {saving && <span className="text-green-500 animate-pulse">Saving...</span>}
+                    {saving && <span className="text-green-500 animate-pulse font-bold">Saving...</span>}
                 </div>
                 <table className="w-full bg-white rounded shadow text-sm">
                     <thead className="bg-gray-50">
@@ -288,7 +281,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                         const { data } = await supabase.from('subjects').select('*').eq('class_id', curClass.id);
                         setSubjects(data);
                     }
-                }} className="text-blue-600 font-bold">+ Add Subject to Class</button>
+                }} className="text-blue-600 font-bold flex items-center gap-2"><Plus size={16}/> Add Subject to Class</button>
             </div>
         )}
       </div>
@@ -296,7 +289,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   );
 };
 
-const Auth = ({ onLogin, onParent }) => {
+const Auth = ({ onParent }) => {
     const [mode, setMode] = useState('login'); 
     const [form, setForm] = useState({ email: '', password: '', name: '', schoolId: '' });
     const [schools, setSchools] = useState([]);
@@ -318,12 +311,12 @@ const Auth = ({ onLogin, onParent }) => {
                     await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: school.id });
                     alert("Success! Please log in."); setMode('login');
                 }
-            } else if (mode === 'teacher_reg' || mode === 'admin_reg') {
+            } else if (mode === 'teacher_reg') {
                  if (!form.schoolId) throw new Error("Select a school");
                  const { data: auth, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password });
                  if (authError) throw authError;
                  if(auth.user){
-                    await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: mode==='teacher_reg'?'teacher':'admin', school_id: form.schoolId });
+                    await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'teacher', school_id: form.schoolId });
                     alert("Success! Please log in."); setMode('login');
                  }
             } else {
@@ -336,17 +329,17 @@ const Auth = ({ onLogin, onParent }) => {
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
             <div className="bg-white p-8 rounded shadow w-full max-w-md border-t-4 border-blue-600">
-                <h1 className="text-2xl font-bold text-center mb-6">Springforth Results</h1>
-                <div className="flex gap-2 mb-6 text-[10px] uppercase font-bold overflow-x-auto pb-2">
+                <h1 className="text-2xl font-bold text-center mb-6 flex items-center justify-center gap-2"><School className="text-blue-600"/> Springforth Results</h1>
+                <div className="flex gap-4 mb-6 text-[10px] uppercase font-bold overflow-x-auto pb-2 border-b">
                     {['login', 'school_reg', 'teacher_reg'].map(m => (
-                        <button key={m} onClick={()=>setMode(m)} className={mode===m?'text-blue-600':''}>{m.replace('_',' ')}</button>
+                        <button key={m} onClick={()=>setMode(m)} className={mode===m?'text-blue-600 border-b border-blue-600':''}>{m.replace('_',' ')}</button>
                     ))}
                 </div>
                 <form onSubmit={handleAuth} className="space-y-4">
                     {mode !== 'login' && <input placeholder="Full Name" className="w-full p-2 border rounded" onChange={e=>setForm({...form, name:e.target.value})} required />}
                     <input type="email" placeholder="Email" className="w-full p-2 border rounded" onChange={e=>setForm({...form, email:e.target.value})} required />
                     <input type="password" placeholder="Password" className="w-full p-2 border rounded" onChange={e=>setForm({...form, password:e.target.value})} required />
-                    {mode.includes('teacher') && (
+                    {mode === 'teacher_reg' && (
                         <select className="w-full p-2 border rounded" onChange={e=>setForm({...form, schoolId:e.target.value})} required>
                             <option value="">Select School</option>
                             {schools.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
@@ -373,15 +366,15 @@ const ParentPortal = ({ onBack }) => {
     };
 
     if (data) return (
-        <div className="fixed inset-0 z-50 bg-white">
-            <div className="p-4 flex justify-between border-b"><button onClick={()=>setData(null)}>Back</button></div>
-            <PDFViewer className="w-full h-full"><ResultPDF {...data} /></PDFViewer>
+        <div className="fixed inset-0 z-50 bg-white flex flex-col">
+            <div className="p-4 flex justify-between border-b bg-gray-50"><button className="font-bold text-blue-600" onClick={()=>setData(null)}>← Back to Portal</button></div>
+            <PDFViewer className="w-full flex-1"><ResultPDF {...data} /></PDFViewer>
         </div>
     );
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-green-50 p-4">
-            <form onSubmit={fetchResult} className="bg-white p-8 rounded shadow w-full max-w-sm">
+            <form onSubmit={fetchResult} className="bg-white p-8 rounded shadow w-full max-sm">
                 <h2 className="text-xl font-bold text-center mb-6">Parent Portal</h2>
                 <input placeholder="Admission No" className="w-full p-2 border rounded mb-3" onChange={e=>setCreds({...creds, adm:e.target.value})} />
                 <input type="password" placeholder="PIN" className="w-full p-2 border rounded mb-4" onChange={e=>setCreds({...creds, pin:e.target.value})} />
@@ -400,8 +393,8 @@ const App = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); if(!session) setLoading(false); });
-    supabase.auth.onAuthStateChange((_event, session) => { setSession(session); if(!session) { setProfile(null); setView('auth'); } });
+    supabase.auth.getSession().then(({ data: { session: s } }) => { setSession(s); if(!s) setLoading(false); });
+    supabase.auth.onAuthStateChange((_event, s) => { setSession(s); if(!s) { setProfile(null); setView('auth'); } });
   }, []);
 
   useEffect(() => {
@@ -414,7 +407,7 @@ const App = () => {
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600" size={48}/></div>;
   if (view === 'parent') return <ParentPortal onBack={() => setView('auth')} />;
-  if (!session) return <Auth onLogin={() => setView('dashboard')} onParent={() => setView('parent')} />;
+  if (!session) return <Auth onParent={() => setView('parent')} />;
   if (!profile) return <div className="p-20 text-center"><button onClick={()=>supabase.auth.signOut()} className="bg-red-500 text-white p-2">Error: No Profile found. Sign Out & Try Again</button></div>;
 
   return profile.role === 'admin' ? <SchoolAdmin profile={profile} onLogout={() => supabase.auth.signOut()} /> : <TeacherDashboard profile={profile} onLogout={() => supabase.auth.signOut()} />;
