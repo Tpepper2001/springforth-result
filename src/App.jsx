@@ -10,8 +10,24 @@ import {
 
 // ==================== SUPABASE CONFIG ====================
 const supabaseUrl = 'https://ghlnenmfwlpwlqdrbean.supabase.co'; 
-const supabaseKey = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdobG5lbm1md2xwd2xxZHJiZWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0MTE0MDQsImV4cCI6MjA3OTk4NzQwNH0.rNILUdI035c4wl4kFkZFP4OcIM_t7bNMqktKm25d5Gg'; 
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdobG5lbm1md2xwd2xxZHJiZWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0MTE0MDQsImV4cCI6MjA3OTk4NzQwNH0.rNILUdI035c4wl4kFkZFP4OcIM_t7bNMqktKm25d5Gg'; 
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+// ==================== KEEP-ALIVE LOGIC ====================
+/**
+ * Simple function to ping Supabase. 
+ * Calling this resets the 7-day inactivity timer on the free tier.
+ */
+const keepSupabaseAlive = async () => {
+    try {
+        // We perform a very small query on a table that likely exists
+        const { data, error } = await supabase.from('schools').select('id').limit(1);
+        if (error) throw error;
+        console.log("Supabase Heartbeat: Project is active.");
+    } catch (err) {
+        console.warn("Heartbeat failed (likely no tables yet or network error):", err.message);
+    }
+};
 
 // ==================== CONSTANTS & HELPERS ====================
 const BEHAVIORAL_TRAITS = [
@@ -911,6 +927,9 @@ const App = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // 1. PROJECT HEARTBEAT: Run once when the app is loaded to keep Supabase active
+    keepSupabaseAlive();
+
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); if(!session) setLoading(false); });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session); if (!session) { setProfile(null); setView('auth'); setLoading(false); }
