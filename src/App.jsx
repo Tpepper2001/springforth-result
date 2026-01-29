@@ -396,51 +396,111 @@ const Auth = ({ onParent }) => {
     
     try {
       if (mode === 'school_reg') {
+        // Step 1: Sign up the user
         const { data: auth, error: ae } = await supabase.auth.signUp({ 
           email: form.email, 
           password: form.password 
         });
         if (ae) throw ae;
         
-        const { data: s, error: se } = await supabase
+        if (!auth.user) {
+          throw new Error('User creation failed');
+        }
+
+        // Step 2: Create the school
+        const { data: school, error: schoolError } = await supabase
           .from('schools')
-          .insert({ owner_id: auth.user.id, name: form.name })
+          .insert({ 
+            owner_id: auth.user.id, 
+            name: form.name,
+            motto: 'Excellence in Education',
+            address: '',
+            contact_info: '',
+            current_term: 'First Term',
+            current_session: '2024/2025'
+          })
           .select()
           .single();
-        if (se) throw se;
         
-        await supabase.from('profiles').insert({ 
-          id: auth.user.id, 
-          full_name: form.name, 
-          role: 'admin', 
-          school_id: s.id 
+        if (schoolError) {
+          console.error('School creation error:', schoolError);
+          throw new Error(`School creation failed: ${schoolError.message}`);
+        }
+        
+        if (!school) {
+          throw new Error('School creation failed - no data returned');
+        }
+
+        // Step 3: Create the profile
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({ 
+            id: auth.user.id, 
+            full_name: form.name, 
+            role: 'admin', 
+            school_id: school.id 
+          });
+        
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+          throw new Error(`Profile creation failed: ${profileError.message}`);
+        }
+        
+        setMessage({ 
+          type: 'success', 
+          text: 'School registered successfully! Please check your email to verify your account, then login.' 
         });
         
-        setMessage({ type: 'success', text: 'School registered successfully! Please login.' });
-        setTimeout(() => setMode('login'), 2000);
+        // Clear form
+        setForm({ email: '', password: '', name: '', schoolId: '' });
+        
+        // Switch to login after delay
+        setTimeout(() => setMode('login'), 3000);
         
       } else if (mode === 'teacher_reg') {
         if (!form.schoolId) {
           throw new Error('Please select a school');
         }
         
+        // Step 1: Sign up the user
         const { data: auth, error: ae } = await supabase.auth.signUp({ 
           email: form.email, 
           password: form.password 
         });
         if (ae) throw ae;
         
-        await supabase.from('profiles').insert({ 
-          id: auth.user.id, 
-          full_name: form.name, 
-          role: 'teacher', 
-          school_id: form.schoolId 
+        if (!auth.user) {
+          throw new Error('User creation failed');
+        }
+
+        // Step 2: Create the profile
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({ 
+            id: auth.user.id, 
+            full_name: form.name, 
+            role: 'teacher', 
+            school_id: form.schoolId 
+          });
+        
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+          throw new Error(`Profile creation failed: ${profileError.message}`);
+        }
+        
+        setMessage({ 
+          type: 'success', 
+          text: 'Teacher account created! Please check your email to verify your account, then login.' 
         });
         
-        setMessage({ type: 'success', text: 'Teacher account created! Please login.' });
-        setTimeout(() => setMode('login'), 2000);
+        // Clear form
+        setForm({ email: '', password: '', name: '', schoolId: '' });
+        
+        // Switch to login after delay
+        setTimeout(() => setMode('login'), 3000);
         
       } else {
+        // Login
         const { error } = await supabase.auth.signInWithPassword({ 
           email: form.email, 
           password: form.password 
@@ -449,7 +509,10 @@ const Auth = ({ onParent }) => {
       }
     } catch (err) { 
       console.error('Auth error:', err);
-      setMessage({ type: 'error', text: err.message || 'An error occurred. Please try again.' });
+      setMessage({ 
+        type: 'error', 
+        text: err.message || 'An error occurred. Please try again.' 
+      });
     }
     setLoading(false);
   };
