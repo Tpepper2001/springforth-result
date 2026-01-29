@@ -5,7 +5,7 @@ import {
 } from '@react-pdf/renderer';
 import {
   LayoutDashboard, LogOut, Loader2, Plus, School, User, Download,
-  X, Eye, Trash2, ShieldCheck, Save, Menu, Upload, Users, Key, Copy, UserPlus
+  X, Eye, Trash2, ShieldCheck, Menu, Users, Key, Copy, UserPlus
 } from 'lucide-react';
 
 // ==================== SUPABASE CONFIG ====================
@@ -233,7 +233,6 @@ const ResultPDF = ({ school, student, results, classInfo, comments, behaviors = 
 const SchoolAdmin = ({ profile, onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [school, setSchool] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [students, setStudents] = useState([]);
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
@@ -244,10 +243,9 @@ const SchoolAdmin = ({ profile, onLogout }) => {
   const [newConfig, setNewConfig] = useState({ name: '', max: 10, code: '' });
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  useEffect(() => { fetchSchoolData(); }, [profile]);
+  useEffect(() => { fetchSchoolData(); }, []);
 
   const fetchSchoolData = async () => {
-    setLoading(true);
     const { data: s } = await supabase.from('schools').select('*').eq('owner_id', profile.id).single();
     if(!s && profile.school_id) {
        const { data: subS } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
@@ -257,7 +255,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
        setSchool(s);
        if(s) await loadRelated(s.id);
     }
-    setLoading(false);
   };
 
   const loadRelated = async (schoolId) => {
@@ -292,7 +289,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
 
   const updateSchool = async (e) => {
     e.preventDefault();
-    setLoading(true);
     const formData = new FormData(e.target);
     const file = formData.get('logo_file');
     let logo_url = school.logo_url;
@@ -313,7 +309,6 @@ const SchoolAdmin = ({ profile, onLogout }) => {
     await supabase.from('schools').update(updates).eq('id', school.id);
     setSchool(prev => ({ ...prev, ...updates }));
     window.alert('School Info Updated!');
-    setLoading(false);
   };
 
   const addConfigField = async () => {
@@ -552,11 +547,20 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         if (cls?.[0]) {
             setSchoolConfig(cls[0].schools.assessment_config || []);
             setSchoolData(cls[0].schools);
-            loadClass(cls[0].id);
+            const clsToLoad = cls.find(c => c.id === cls[0].id);
+            if (clsToLoad) {
+                setCurClass(clsToLoad);
+                setSelectedStudent(null);
+                setShowAddStudent(false);
+                const { data: sub } = await supabase.from('subjects').select('*').eq('class_id', clsToLoad.id);
+                setSubjects(sub || []);
+                const { data: stu } = await supabase.from('students').select('*, classes(profiles(signature_url))').eq('class_id', clsToLoad.id).order('name');
+                setStudents(stu || []);
+            }
         }
     };
     init();
-  }, [profile]);
+  }, [profile.id]);
 
   const loadClass = async (classId) => {
     const cls = classes.find(c => c.id === classId);
