@@ -243,11 +243,26 @@ const Dashboard = ({ profile, onLogout }) => {
   const fetchData = useCallback(async () => {
     try {
       console.log('Fetching school data for school_id:', profile.school_id);
+      
+      // Check if school_id is valid
+      if (!profile.school_id || profile.school_id === 'null' || profile.school_id === null) {
+        console.error('Invalid school_id:', profile.school_id);
+        alert('Your account is not properly configured. Please contact the administrator or create a new account.\n\nIssue: No school assigned to your profile.');
+        setSchool(null);
+        setClassList([]);
+        return;
+      }
+      
       const { data: s, error: schoolError } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
       
       if (schoolError) {
         console.error('Error fetching school:', schoolError);
-        alert('Error loading school data: ' + schoolError.message);
+        alert('Error loading school data: ' + schoolError.message + '\n\nYour account may not be properly set up. Please contact the administrator.');
+        return;
+      }
+      
+      if (!s) {
+        alert('School not found. Your account may be linked to a deleted school. Please contact the administrator.');
         return;
       }
       
@@ -415,7 +430,7 @@ const Dashboard = ({ profile, onLogout }) => {
           ))}
         </div>
         <div className="border-t border-slate-700 pt-4 space-y-2">
-          {profile.role === 'admin' && <button onClick={() => setActiveTab('settings')} className="w-full text-left p-2 text-sm flex items-center gap-2 hover:bg-slate-800 rounded transition"><Settings size={16}/> School Profile</button>}
+          <button onClick={() => setActiveTab('settings')} className="w-full text-left p-2 text-sm flex items-center gap-2 hover:bg-slate-800 rounded transition"><Settings size={16}/> School Management</button>
           <button onClick={onLogout} className="w-full text-left p-2 text-sm text-red-400 flex items-center gap-2 hover:bg-slate-800 rounded transition"><LogOut size={16}/> Logout</button>
         </div>
       </div>
@@ -423,11 +438,33 @@ const Dashboard = ({ profile, onLogout }) => {
       <div className="flex-1 overflow-auto p-4 lg:p-8 w-full">
         {activeTab === 'settings' ? (
           <div className="space-y-6">
+            {/* Welcome Header */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-xl border-2 border-blue-200">
+              <h1 className="text-2xl lg:text-3xl font-bold text-blue-900 mb-2">
+                {profile.role === 'admin' ? 'School Administration' : 'School Management'}
+              </h1>
+              <p className="text-blue-700 text-sm lg:text-base">
+                {profile.role === 'admin' 
+                  ? 'Manage your school profile, classes, students, and subjects.'
+                  : 'Manage classes, students, and subjects for your school.'}
+              </p>
+            </div>
+
             {/* School Profile */}
             <div className="bg-white p-4 lg:p-8 rounded-xl shadow-sm border">
               <h2 className="text-xl lg:text-2xl font-bold mb-6">School Profile</h2>
+              {profile.role !== 'admin' && (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                  <strong>Note:</strong> Only the school administrator can edit the school profile. You can view the information below.
+                </div>
+              )}
               <form onSubmit={async(e)=>{
                 e.preventDefault();
+                
+                if (profile.role !== 'admin') {
+                  alert("Only the school administrator can update the school profile.");
+                  return;
+                }
                 
                 if (!school || !school.id) {
                   alert("Error: School data not loaded. Please refresh the page.");
@@ -457,15 +494,17 @@ const Dashboard = ({ profile, onLogout }) => {
                   alert("Error: " + err.message);
                 }
               }} className="space-y-4">
-                <input name="n" defaultValue={school?.name} placeholder="School Name" className="w-full border-2 p-3 rounded-lg" required />
-                <input name="m" defaultValue={school?.motto} placeholder="School Motto" className="w-full border-2 p-3 rounded-lg" />
-                <textarea name="a" defaultValue={school?.address} placeholder="Address" className="w-full border-2 p-3 rounded-lg h-20" />
-                <input name="c" defaultValue={school?.contact_info} placeholder="Contact Info (Phone/Email)" className="w-full border-2 p-3 rounded-lg" />
+                <input name="n" defaultValue={school?.name} placeholder="School Name" className="w-full border-2 p-3 rounded-lg" required disabled={profile.role !== 'admin'} />
+                <input name="m" defaultValue={school?.motto} placeholder="School Motto" className="w-full border-2 p-3 rounded-lg" disabled={profile.role !== 'admin'} />
+                <textarea name="a" defaultValue={school?.address} placeholder="Address" className="w-full border-2 p-3 rounded-lg h-20" disabled={profile.role !== 'admin'} />
+                <input name="c" defaultValue={school?.contact_info} placeholder="Contact Info (Phone/Email)" className="w-full border-2 p-3 rounded-lg" disabled={profile.role !== 'admin'} />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <input name="t" defaultValue={school?.current_term} placeholder="Term (e.g., First Term)" className="border-2 p-3 rounded-lg" required />
-                  <input name="s" defaultValue={school?.current_session} placeholder="Session (e.g., 2024/2025)" className="border-2 p-3 rounded-lg" required />
+                  <input name="t" defaultValue={school?.current_term} placeholder="Term (e.g., First Term)" className="border-2 p-3 rounded-lg" required disabled={profile.role !== 'admin'} />
+                  <input name="s" defaultValue={school?.current_session} placeholder="Session (e.g., 2024/2025)" className="border-2 p-3 rounded-lg" required disabled={profile.role !== 'admin'} />
                 </div>
-                <button type="submit" className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold w-full sm:w-auto hover:bg-blue-700 transition">Update School Profile</button>
+                {profile.role === 'admin' && (
+                  <button type="submit" className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold w-full sm:w-auto hover:bg-blue-700 transition">Update School Profile</button>
+                )}
               </form>
             </div>
 
