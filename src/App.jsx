@@ -20,22 +20,7 @@ const getGrade = (obtained, max) => {
   return { g: 'E', r: 'Fail', c: 'Poor performance. Serious improvement is required.' };
 };
 
-const getPosition = (avg, allAverages) => {
-  const sorted = [...allAverages].sort((a, b) => b - a);
-  const pos = sorted.indexOf(avg) + 1;
-  const suffix = pos === 1 ? 'st' : pos === 2 ? 'nd' : pos === 3 ? 'rd' : 'th';
-  return `${pos}${suffix}`;
-};
 
-const generateAutoComment = (average) => {
-  if (average >= 90) return "Excellent performance! Keep up the outstanding work.";
-  if (average >= 80) return "Very good performance. Maintain this excellent standard.";
-  if (average >= 70) return "Good performance. With more effort, you can achieve excellence.";
-  if (average >= 60) return "Fair performance. You need to put in more effort to improve.";
-  if (average >= 50) return "Satisfactory. You can do much better with consistent effort.";
-  if (average >= 40) return "Below average. Serious attention needed to improve performance.";
-  return "Poor performance. Immediate intervention and hard work required.";
-};
 
 // ==================== PDF STYLES ====================
 const pdfStyles = StyleSheet.create({
