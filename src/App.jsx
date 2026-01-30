@@ -241,20 +241,61 @@ const Dashboard = ({ profile, onLogout }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
-    const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
-    setSchool(s);
-    const { data: cls } = await supabase.from('classes').select('*').eq('school_id', profile.school_id).order('name');
-    setClassList(cls || []);
+    try {
+      console.log('Fetching school data for school_id:', profile.school_id);
+      const { data: s, error: schoolError } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
+      
+      if (schoolError) {
+        console.error('Error fetching school:', schoolError);
+        alert('Error loading school data: ' + schoolError.message);
+        return;
+      }
+      
+      console.log('School data loaded:', s);
+      setSchool(s);
+      
+      const { data: cls, error: classError } = await supabase.from('classes').select('*').eq('school_id', profile.school_id).order('name');
+      
+      if (classError) {
+        console.error('Error fetching classes:', classError);
+      } else {
+        console.log('Classes loaded:', cls?.length || 0);
+        setClassList(cls || []);
+      }
+    } catch (err) {
+      console.error('fetchData error:', err);
+      alert('Error loading data: ' + err.message);
+    }
   }, [profile.school_id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const loadClass = async (id) => {
-    setSelectedClassId(id);
-    const { data: stu } = await supabase.from('students').select('*').eq('class_id', id).order('name');
-    setStudents(stu || []);
-    const { data: sub } = await supabase.from('subjects').select('*').eq('class_id', id).order('name');
-    setSubjects(sub || []);
+    try {
+      console.log('Loading class:', id);
+      setSelectedClassId(id);
+      
+      const { data: stu, error: stuError } = await supabase.from('students').select('*').eq('class_id', id).order('name');
+      if (stuError) {
+        console.error('Error loading students:', stuError);
+        alert('Error loading students: ' + stuError.message);
+      } else {
+        console.log('Students loaded:', stu?.length || 0);
+        setStudents(stu || []);
+      }
+      
+      const { data: sub, error: subError } = await supabase.from('subjects').select('*').eq('class_id', id).order('name');
+      if (subError) {
+        console.error('Error loading subjects:', subError);
+        alert('Error loading subjects: ' + subError.message);
+      } else {
+        console.log('Subjects loaded:', sub?.length || 0);
+        setSubjects(sub || []);
+      }
+    } catch (err) {
+      console.error('loadClass error:', err);
+      alert('Error loading class: ' + err.message);
+    }
   };
 
   const loadStudent = async (stu) => {
@@ -386,22 +427,34 @@ const Dashboard = ({ profile, onLogout }) => {
             <div className="bg-white p-4 lg:p-8 rounded-xl shadow-sm border">
               <h2 className="text-xl lg:text-2xl font-bold mb-6">School Profile</h2>
               <form onSubmit={async(e)=>{
-                e.preventDefault(); 
-                const fd=new FormData(e.target);
-                const { error } = await supabase.from('schools').update({
-                    name: fd.get('n'), 
-                    motto: fd.get('m'), 
-                    address: fd.get('a'), 
-                    contact_info: fd.get('c'), 
-                    current_term: fd.get('t'), 
-                    current_session: fd.get('s')
-                }).eq('id', school.id);
+                e.preventDefault();
                 
-                if (error) {
-                  alert("Error: " + error.message);
-                } else {
-                  alert("School profile updated successfully!");
-                  fetchData();
+                if (!school || !school.id) {
+                  alert("Error: School data not loaded. Please refresh the page.");
+                  return;
+                }
+                
+                try {
+                  const fd = new FormData(e.target);
+                  const { error } = await supabase.from('schools').update({
+                      name: fd.get('n'), 
+                      motto: fd.get('m'), 
+                      address: fd.get('a'), 
+                      contact_info: fd.get('c'), 
+                      current_term: fd.get('t'), 
+                      current_session: fd.get('s')
+                  }).eq('id', school.id);
+                  
+                  if (error) {
+                    console.error('Update error:', error);
+                    alert("Error updating school profile: " + error.message);
+                  } else {
+                    alert("School profile updated successfully!");
+                    await fetchData();
+                  }
+                } catch (err) {
+                  console.error('Form submission error:', err);
+                  alert("Error: " + err.message);
                 }
               }} className="space-y-4">
                 <input name="n" defaultValue={school?.name} placeholder="School Name" className="w-full border-2 p-3 rounded-lg" required />
@@ -423,19 +476,39 @@ const Dashboard = ({ profile, onLogout }) => {
               {/* Add New Class */}
               <form onSubmit={async(e)=>{
                 e.preventDefault();
-                const fd = new FormData(e.target);
-                const { error } = await supabase.from('classes').insert({
-                  school_id: school.id,
-                  name: fd.get('className'),
-                  class_teacher: fd.get('teacher')
-                });
                 
-                if (error) {
-                  alert("Error: " + error.message);
-                } else {
-                  alert("Class added successfully!");
-                  e.target.reset();
-                  fetchData();
+                if (!school || !school.id) {
+                  alert("Error: School data not loaded. Please refresh the page.");
+                  return;
+                }
+                
+                try {
+                  const fd = new FormData(e.target);
+                  const className = fd.get('className');
+                  const teacher = fd.get('teacher');
+                  
+                  if (!className || className.trim() === '') {
+                    alert("Please enter a class name");
+                    return;
+                  }
+                  
+                  const { error } = await supabase.from('classes').insert({
+                    school_id: school.id,
+                    name: className.trim(),
+                    class_teacher: teacher ? teacher.trim() : null
+                  });
+                  
+                  if (error) {
+                    console.error('Insert error:', error);
+                    alert("Error adding class: " + error.message);
+                  } else {
+                    alert("Class added successfully!");
+                    e.target.reset();
+                    await fetchData();
+                  }
+                } catch (err) {
+                  console.error('Form submission error:', err);
+                  alert("Error: " + err.message);
                 }
               }} className="mb-6 p-4 bg-slate-50 rounded-lg">
                 <h3 className="font-bold mb-3 text-sm uppercase text-slate-600">Add New Class</h3>
@@ -497,28 +570,68 @@ const Dashboard = ({ profile, onLogout }) => {
                   {/* Add New Student */}
                   <form onSubmit={async(e)=>{
                     e.preventDefault();
-                    const fd = new FormData(e.target);
-                    const { error } = await supabase.from('students').insert({
-                      class_id: selectedClassId,
-                      name: fd.get('studentName'),
-                      admission_no: fd.get('admNo'),
-                      gender: fd.get('gender'),
-                      date_of_birth: fd.get('dob') || null,
-                      parent_name: fd.get('parentName'),
-                      parent_contact: fd.get('parentContact'),
-                      address: fd.get('address'),
-                      blood_group: fd.get('bloodGroup'),
-                      religion: fd.get('religion'),
-                      state_of_origin: fd.get('stateOfOrigin'),
-                      previous_school: fd.get('previousSchool')
-                    });
                     
-                    if (error) {
-                      alert("Error: " + error.message);
-                    } else {
-                      alert("Student added successfully!");
-                      e.target.reset();
-                      loadClass(selectedClassId);
+                    if (!selectedClassId) {
+                      alert("Please select a class first");
+                      return;
+                    }
+                    
+                    try {
+                      const fd = new FormData(e.target);
+                      const studentName = fd.get('studentName');
+                      const admNo = fd.get('admNo');
+                      const gender = fd.get('gender');
+                      const parentName = fd.get('parentName');
+                      const parentContact = fd.get('parentContact');
+                      
+                      // Validation
+                      if (!studentName || studentName.trim() === '') {
+                        alert("Please enter student name");
+                        return;
+                      }
+                      if (!admNo || admNo.trim() === '') {
+                        alert("Please enter admission number");
+                        return;
+                      }
+                      if (!gender) {
+                        alert("Please select gender");
+                        return;
+                      }
+                      if (!parentName || parentName.trim() === '') {
+                        alert("Please enter parent/guardian name");
+                        return;
+                      }
+                      if (!parentContact || parentContact.trim() === '') {
+                        alert("Please enter parent contact");
+                        return;
+                      }
+                      
+                      const { error } = await supabase.from('students').insert({
+                        class_id: selectedClassId,
+                        name: studentName.trim(),
+                        admission_no: admNo.trim(),
+                        gender: gender,
+                        date_of_birth: fd.get('dob') || null,
+                        parent_name: parentName.trim(),
+                        parent_contact: parentContact.trim(),
+                        address: fd.get('address') ? fd.get('address').trim() : null,
+                        blood_group: fd.get('bloodGroup') ? fd.get('bloodGroup').trim() : null,
+                        religion: fd.get('religion') ? fd.get('religion').trim() : null,
+                        state_of_origin: fd.get('stateOfOrigin') ? fd.get('stateOfOrigin').trim() : null,
+                        previous_school: fd.get('previousSchool') ? fd.get('previousSchool').trim() : null
+                      });
+                      
+                      if (error) {
+                        console.error('Insert error:', error);
+                        alert("Error adding student: " + error.message);
+                      } else {
+                        alert("Student added successfully!");
+                        e.target.reset();
+                        await loadClass(selectedClassId);
+                      }
+                    } catch (err) {
+                      console.error('Form submission error:', err);
+                      alert("Error: " + err.message);
                     }
                   }} className="mb-6 p-4 bg-slate-50 rounded-lg">
                     <h3 className="font-bold mb-3 text-sm uppercase text-slate-600">Add New Student</h3>
@@ -597,19 +710,39 @@ const Dashboard = ({ profile, onLogout }) => {
                   {/* Add New Subject */}
                   <form onSubmit={async(e)=>{
                     e.preventDefault();
-                    const fd = new FormData(e.target);
-                    const { error } = await supabase.from('subjects').insert({
-                      class_id: selectedClassId,
-                      name: fd.get('subjectName'),
-                      teacher_name: fd.get('teacherName')
-                    });
                     
-                    if (error) {
-                      alert("Error: " + error.message);
-                    } else {
-                      alert("Subject added successfully!");
-                      e.target.reset();
-                      loadClass(selectedClassId);
+                    if (!selectedClassId) {
+                      alert("Please select a class first");
+                      return;
+                    }
+                    
+                    try {
+                      const fd = new FormData(e.target);
+                      const subjectName = fd.get('subjectName');
+                      const teacherName = fd.get('teacherName');
+                      
+                      if (!subjectName || subjectName.trim() === '') {
+                        alert("Please enter subject name");
+                        return;
+                      }
+                      
+                      const { error } = await supabase.from('subjects').insert({
+                        class_id: selectedClassId,
+                        name: subjectName.trim(),
+                        teacher_name: teacherName ? teacherName.trim() : null
+                      });
+                      
+                      if (error) {
+                        console.error('Insert error:', error);
+                        alert("Error adding subject: " + error.message);
+                      } else {
+                        alert("Subject added successfully!");
+                        e.target.reset();
+                        await loadClass(selectedClassId);
+                      }
+                    } catch (err) {
+                      console.error('Form submission error:', err);
+                      alert("Error: " + err.message);
                     }
                   }} className="mb-6 p-4 bg-slate-50 rounded-lg">
                     <h3 className="font-bold mb-3 text-sm uppercase text-slate-600">Add New Subject</h3>
