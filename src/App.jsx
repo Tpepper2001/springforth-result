@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink, Image } from '@react-pdf/renderer';
-import { Loader2, School, LogOut,  Search,  Shield, Plus, UserCog, BookOpen } from 'lucide-react';
+import { Loader2, School, LogOut, Users, Settings, CheckCircle, Search, Menu, X, Upload, Shield, UserCog } from 'lucide-react';
 
 const supabaseUrl = 'https://ghlnenmfwlpwlqdrbean.supabase.co'; 
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdobG5lbm1md2xwd2xxZHJiZWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0MTE0MDQsImV4cCI6MjA3OTk4NzQwNH0.rNILUdI035c4wl4kFkZFP4OcIM_t7bNMqktKm25d5Gg'; 
@@ -21,24 +21,21 @@ const getGrade = (obtained, max) => {
 };
 
 const pdfStyles = StyleSheet.create({
-  page: { padding: 40, fontSize: 8, fontFamily: 'Helvetica' },
-  header: { textAlign: 'center', marginBottom: 15, borderBottom: 2, paddingBottom: 5 },
-  schoolName: { fontSize: 20, fontWeight: 'bold' },
-  motto: { fontStyle: 'italic', fontSize: 9, marginBottom: 5 },
+  page: { padding: 30, fontSize: 8, fontFamily: 'Helvetica' },
+  header: { textAlign: 'center', marginBottom: 15, borderBottom: 2, paddingBottom: 10 },
+  schoolName: { fontSize: 20, fontWeight: 'bold', color: '#1e3a8a' },
   logo: { width: 60, height: 60, marginBottom: 5, alignSelf: 'center' },
-  table: { width: '100%', marginTop: 10, borderTop: 1 },
+  bio: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, padding: 8, backgroundColor: '#f3f4f6' },
+  table: { width: '100%', borderTop: 1 },
   row: { flexDirection: 'row', borderBottom: 1, padding: 4 },
-  cell: { flex: 1, textAlign: 'center' }
+  cell: { flex: 1, textAlign: 'center' },
+  psychRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, border: 1, padding: 5 }
 });
 
 // ==================== PDF COMPONENT ====================
 const ResultPDF = ({ school, student, results, comments, type = 'full' }) => {
-  const totalMax = 100;
-  let totalObtained = results.reduce((acc, r) => acc + (parseFloat(r.scores?.ca) || 0) + (parseFloat(r.scores?.exam) || 0), 0);
-  let subjectCount = results.length;
-  const overallMax = subjectCount * totalMax;
-  const avg = subjectCount > 0 ? (totalObtained / overallMax) * 100 : 0;
-  const gradeInfo = getGrade(avg, 100);
+  const totalObtained = results.reduce((acc, r) => acc + (parseFloat(r.scores?.ca) || 0) + (parseFloat(r.scores?.exam) || 0), 0);
+  const avg = results.length > 0 ? totalObtained / results.length : 0;
 
   return (
     <Document>
@@ -46,109 +43,107 @@ const ResultPDF = ({ school, student, results, comments, type = 'full' }) => {
         <View style={pdfStyles.header}>
           {school?.logo_url && <Image src={school.logo_url} style={pdfStyles.logo} />}
           <Text style={pdfStyles.schoolName}>{school?.name}</Text>
-          <Text style={pdfStyles.motto}>"{school?.motto}"</Text>
-          <Text style={{ marginTop: 8, fontWeight: 'bold', fontSize: 11 }}>
-            {type === 'ca' ? 'MID-TERM REPORT' : 'END OF TERM REPORT'}
-          </Text>
+          <Text style={{ fontSize: 9 }}>{school?.motto}</Text>
+          <Text style={{ marginTop: 5, fontWeight: 'bold' }}>{type === 'ca' ? 'MID-TERM CA REPORT' : 'END OF TERM REPORT'}</Text>
         </View>
-        <View style={{ marginBottom: 10, padding: 5, backgroundColor: '#f0f0f0' }}>
-          <Text>Name: {student?.name} | Adm: {student?.admission_no}</Text>
-          <Text>Class: {student?.classes?.name} | Term: {school?.current_term}</Text>
+
+        <View style={pdfStyles.bio}>
+          <View>
+            <Text>Name: {student?.name}</Text>
+            <Text>Adm No: {student?.admission_no}</Text>
+          </View>
+          <View>
+            <Text>Class: {student?.classes?.name}</Text>
+            <Text>Gender: {student?.gender}</Text>
+          </View>
         </View>
+
         <View style={pdfStyles.table}>
-          <View style={[pdfStyles.row, { backgroundColor: '#eee' }]}>
+          <View style={[pdfStyles.row, { backgroundColor: '#1e3a8a', color: 'white' }]}>
             <Text style={{ width: 120 }}>Subject</Text>
-            <Text style={pdfStyles.cell}>CA</Text>
-            <Text style={pdfStyles.cell}>Exam</Text>
+            <Text style={pdfStyles.cell}>CA (40)</Text>
+            {type === 'full' && <Text style={pdfStyles.cell}>Exam (60)</Text>}
             <Text style={pdfStyles.cell}>Total</Text>
             <Text style={pdfStyles.cell}>Grade</Text>
           </View>
           {results.map(r => {
-            const subTotal = (parseFloat(r.scores?.ca) || 0) + (parseFloat(r.scores?.exam) || 0);
+            const ca = parseFloat(r.scores?.ca) || 0;
+            const ex = parseFloat(r.scores?.exam) || 0;
+            const tot = type === 'ca' ? ca : (ca + ex);
+            const m = type === 'ca' ? 40 : 100;
             return (
               <View key={r.id} style={pdfStyles.row}>
                 <Text style={{ width: 120 }}>{r.subjects?.name}</Text>
-                <Text style={pdfStyles.cell}>{r.scores?.ca}</Text>
-                <Text style={pdfStyles.cell}>{r.scores?.exam}</Text>
-                <Text style={pdfStyles.cell}>{subTotal}</Text>
-                <Text style={pdfStyles.cell}>{getGrade(subTotal, 100).g}</Text>
+                <Text style={pdfStyles.cell}>{ca}</Text>
+                {type === 'full' && <Text style={pdfStyles.cell}>{ex}</Text>}
+                <Text style={pdfStyles.cell}>{tot}</Text>
+                <Text style={pdfStyles.cell}>{getGrade(tot, m).g}</Text>
               </View>
             );
           })}
         </View>
-        <View style={{ marginTop: 15 }}>
-          <Text>Average: {avg.toFixed(2)}% | Grade: {gradeInfo.g}</Text>
-          <Text style={{ marginTop: 10 }}>Teacher: {comments?.tutor_comment}</Text>
-          <Text>Headmistress: {comments?.principal_comment}</Text>
+
+        {type === 'full' && (
+          <View style={{ marginTop: 15 }}>
+            <Text style={{ fontWeight: 'bold', marginBottom: 5 }}>Psychomotor Skills:</Text>
+            <View style={pdfStyles.psychRow}>
+              {Object.entries(comments?.behaviors || {}).map(([k, v]) => (
+                <Text key={k} style={{ width: '33%', fontSize: 7 }}>{k}: {v}</Text>
+              ))}
+            </View>
+          </View>
+        )}
+
+        <View style={{ marginTop: 20 }}>
+          <Text>Teacher's Remark: {comments?.tutor_comment}</Text>
+          <Text>Average Score: {avg.toFixed(2)}%</Text>
         </View>
       </Page>
     </Document>
   );
 };
 
-// ==================== CENTRAL ADMIN ====================
+// ==================== DASHBOARDS ====================
+
 const CentralAdminDashboard = ({ onLogout }) => {
-  const [schools, setSchools] = useState([]);
   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState(null);
 
-  const loadData = useCallback(async () => {
-    const { data: s } = await supabase.from('schools').select('*').order('name');
-    setSchools(s || []);
-    const { data: u } = await supabase.from('profiles').select('*, schools(name)').order('full_name');
-    setUsers(u || []);
-    setLoading(false);
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('profiles').select('*, schools(name)');
+    setUsers(data || []);
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { load(); }, [load]);
 
-  const updateRole = async (userId, newRole) => {
-    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
-    if (!error) { alert("Role Updated!"); loadData(); setSelectedUser(null); }
+  const changeRole = async (u, r) => {
+    await supabase.from('profiles').update({ role: r }).eq('id', u);
+    load(); setSelectedUser(null);
   };
 
-  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
-
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
-      <div className="flex justify-between items-center mb-8 bg-indigo-700 p-6 rounded-xl text-white">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Shield /> Central Admin</h1>
-        <button onClick={onLogout} className="bg-white/20 px-4 py-2 rounded">Logout</button>
+    <div className="min-h-screen bg-slate-50 p-6">
+      <div className="flex justify-between items-center bg-blue-900 text-white p-6 rounded-xl mb-6 shadow-lg">
+        <h1 className="text-xl font-bold flex items-center gap-2"><Shield /> System Control</h1>
+        <button onClick={onLogout} className="bg-white/20 p-2 rounded flex items-center gap-2"><LogOut size={18}/> Logout</button>
       </div>
-      <div className="bg-white rounded-xl shadow overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-slate-100"><tr><th className="p-4">Name</th><th>School</th><th>Role</th><th>Action</th></tr></thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id} className="border-t">
-                <td className="p-4">{u.full_name}</td>
-                <td>{u.schools?.name || 'N/A'}</td>
-                <td><span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold uppercase">{u.role}</span></td>
-                <td><button onClick={() => setSelectedUser(u)} className="text-indigo-600 font-bold flex items-center gap-1"><UserCog size={16}/> Manage</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="bg-white rounded-xl shadow p-4">
+        {users.map(u => (
+          <div key={u.id} className="flex justify-between items-center p-3 border-b last:border-0">
+            <div><p className="font-bold">{u.full_name}</p><p className="text-xs text-slate-400">{u.schools?.name} • {u.role}</p></div>
+            <button onClick={() => setSelectedUser(u)} className="p-2 bg-slate-100 rounded hover:bg-slate-200"><UserCog size={18}/></button>
+          </div>
+        ))}
       </div>
       {selectedUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white p-6 rounded-xl max-w-sm w-full">
-            <h3 className="font-bold mb-4">Manage {selectedUser.full_name}</h3>
-            <select className="w-full border p-2 rounded mb-4" defaultValue={selectedUser.role} onChange={(e) => updateRole(selectedUser.id, e.target.value)}>
-               <option value="teacher">Teacher</option>
-               <option value="admin">School Admin</option>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded-xl w-full max-w-xs">
+            <div className="flex justify-between items-center mb-4"><h3 className="font-bold">Set Role</h3><button onClick={() => setSelectedUser(null)}><X/></button></div>
+            <select className="w-full border p-2 rounded mb-4" onChange={(e) => changeRole(selectedUser.id, e.target.value)}>
+              <option value="">Select Role</option>
+              <option value="teacher">Teacher</option>
+              <option value="admin">Admin</option>
             </select>
-            <div className="flex flex-col gap-2">
-               <label className="text-xs font-bold text-slate-400 uppercase">Transfer School</label>
-               <select className="w-full border p-2 rounded mb-4" onChange={(e) => {
-                 supabase.from('profiles').update({ school_id: e.target.value }).eq('id', selectedUser.id).then(() => { alert("Transferred!"); loadData(); setSelectedUser(null); });
-               }}>
-                  <option value="">Select School</option>
-                  {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-               </select>
-            </div>
-            <button onClick={() => setSelectedUser(null)} className="w-full text-slate-400">Cancel</button>
           </div>
         </div>
       )}
@@ -156,7 +151,6 @@ const CentralAdminDashboard = ({ onLogout }) => {
   );
 };
 
-// ==================== TEACHER DASHBOARD ====================
 const TeacherDashboard = ({ profile, onLogout }) => {
   const [school, setSchool] = useState(null);
   const [classList, setClassList] = useState([]);
@@ -166,396 +160,277 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [scores, setScores] = useState({});
   const [commentData, setCommentData] = useState({ behaviors: {} });
-  const [studentResults, setStudentResults] = useState([]);
-  const [previewMode, setPreviewMode] = useState(null);
-  const [activeTab, setActiveTab] = useState('scores');
-  
-  const [showAddClass, setShowAddClass] = useState(false);
-  const [newClassName, setNewClassName] = useState('');
-  const [showAddStudent, setShowAddStudent] = useState(false);
-  const [newStudent, setNewStudent] = useState({ name: '', admission_no: '', gender: 'Male' });
-  const [showAddSubject, setShowAddSubject] = useState(false);
-  const [newSubjectName, setNewSubjectName] = useState('');
+  const [results, setResults] = useState([]);
+  const [preview, setPreview] = useState(null);
+  const [tab, setTab] = useState('scores');
+  const [side, setSide] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const fetchData = useCallback(async () => {
+  const init = useCallback(async () => {
     const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
     setSchool(s);
-    const { data: cls } = await supabase.from('classes').select('*').eq('school_id', profile.school_id).order('name');
-    setClassList(cls || []);
+    const { data: c } = await supabase.from('classes').select('*').eq('school_id', profile.school_id);
+    setClassList(c || []);
   }, [profile.school_id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { init(); }, [init]);
 
   const loadClass = async (id) => {
     setSelectedClassId(id);
-    const { data: stu } = await supabase.from('students').select('*').eq('class_id', id).order('name');
-    setStudents(stu || []);
-    const { data: sub } = await supabase.from('subjects').select('*').eq('class_id', id).order('name');
+    const { data: st } = await supabase.from('students').select('*').eq('class_id', id);
+    setStudents(st || []);
+    const { data: sub } = await supabase.from('subjects').select('*').eq('class_id', id);
     setSubjects(sub || []);
-    setSelectedStudent(null);
   };
 
-  const handleCreateClass = async (e) => {
-    e.preventDefault();
-    const { error } = await supabase.from('classes').insert({ name: newClassName, school_id: profile.school_id });
-    if (!error) { alert("Class Created!"); setNewClassName(''); setShowAddClass(false); fetchData(); }
+  const selectStu = async (s) => {
+    setSelectedStudent(s); setSide(false);
+    const { data: rs } = await supabase.from('results').select('*, subjects(name)').eq('student_id', s.id);
+    const { data: co } = await supabase.from('comments').select('*').eq('student_id', s.id).maybeSingle();
+    setResults(rs || []);
+    setScores(rs?.reduce((a, r) => ({ ...a, [r.subject_id]: r.scores }), {}) || {});
+    setCommentData(co || { behaviors: {}, submission_status: 'draft' });
   };
 
-  const handleAddSubject = async (e) => {
-    e.preventDefault();
-    const { error } = await supabase.from('subjects').insert({ name: newSubjectName, class_id: selectedClassId });
-    if (!error) { alert("Subject Added!"); setNewSubjectName(''); setShowAddSubject(false); loadClass(selectedClassId); }
-  };
-
-  const handleRegisterStudent = async (e) => {
-    e.preventDefault();
-    const { error } = await supabase.from('students').insert({ ...newStudent, class_id: selectedClassId, school_id: profile.school_id });
-    if (!error) { alert("Student Registered!"); setShowAddStudent(false); loadClass(selectedClassId); }
-  };
-
-  const loadStudent = async (stu) => {
-    setSelectedStudent(stu);
-    const { data: res } = await supabase.from('results').select('*, subjects(name)').eq('student_id', stu.id);
-    const { data: comm } = await supabase.from('comments').select('*').eq('student_id', stu.id).maybeSingle();
-    setScores(res?.reduce((acc, r) => ({ ...acc, [r.subject_id]: r.scores }), {}) || {});
-    setStudentResults(res || []);
-    setCommentData(comm || { behaviors: {}, submission_status: 'draft' });
-  };
-
-  const handleSave = async () => {
-    const updates = subjects.map(s => ({
-      student_id: selectedStudent.id,
-      subject_id: s.id,
-      scores: scores[s.id] || {},
-      total: (parseFloat(scores[s.id]?.ca) || 0) + (parseFloat(scores[s.id]?.exam) || 0)
-    }));
-    await supabase.from('results').delete().eq('student_id', selectedStudent.id);
-    await supabase.from('results').insert(updates);
-    await supabase.from('comments').upsert({
-      student_id: selectedStudent.id,
-      school_id: school.id,
-      tutor_comment: commentData.tutor_comment,
-      behaviors: commentData.behaviors,
-      submission_status: 'pending'
+  const save = async () => {
+    setLoading(true);
+    const ups = subjects.map(s => {
+      const ca = Math.min(40, parseFloat(scores[s.id]?.ca) || 0);
+      const ex = Math.min(60, parseFloat(scores[s.id]?.exam) || 0);
+      return { student_id: selectedStudent.id, subject_id: s.id, scores: { ca, exam: ex }, total: ca + ex };
     });
-    alert("Results Saved & Submitted!");
-    loadStudent(selectedStudent);
+    await supabase.from('results').delete().eq('student_id', selectedStudent.id);
+    await supabase.from('results').insert(ups);
+    await supabase.from('comments').upsert({ student_id: selectedStudent.id, school_id: school.id, tutor_comment: commentData.tutor_comment, behaviors: commentData.behaviors, submission_status: 'pending' });
+    setLoading(false); alert("Saved!"); selectStu(selectedStudent);
+  };
+
+  const addStudent = async () => {
+    const name = prompt("Student Name:");
+    if (!name) return;
+    const adm = `SF-${new Date().getFullYear()}-${Math.floor(1000+Math.random()*9000)}`;
+    await supabase.from('students').insert({ name, admission_no: adm, class_id: selectedClassId, school_id: profile.school_id, gender: 'Male' });
+    loadClass(selectedClassId);
   };
 
   return (
-    <div className="flex h-screen bg-slate-50">
-      <div className="w-64 bg-slate-900 text-white p-4 flex flex-col">
-        <div className="font-bold mb-6 flex items-center gap-2 text-blue-400"><School/> {school?.name}</div>
-        
-        <div className="flex justify-between items-center mb-1">
-           <label className="text-[10px] text-slate-400 uppercase font-bold">Class List</label>
-           <button onClick={() => setShowAddClass(true)} className="hover:text-blue-400"><Plus size={16}/></button>
-        </div>
-        <select className="bg-slate-800 p-2 rounded mb-6 text-sm" value={selectedClassId} onChange={(e) => loadClass(e.target.value)}>
-          <option value="">Select Class</option>
-          {classList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+    <div className="flex h-screen bg-white">
+      <div className={`fixed lg:static inset-y-0 left-0 w-64 bg-slate-900 text-white p-4 transition-transform z-40 ${side ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <div className="flex justify-between items-center mb-8"><h1 className="flex items-center gap-2 font-bold"><School/> {school?.name}</h1><button onClick={()=>setSide(false)} className="lg:hidden"><X/></button></div>
+        <select className="w-full bg-slate-800 p-2 rounded mb-6 outline-none" onChange={(e)=>loadClass(e.target.value)}>
+          <option value="">Classes</option>
+          {classList.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-
-        {selectedClassId && (
-          <>
-            <div className="flex justify-between items-center mb-1">
-               <span className="text-[10px] text-slate-400 uppercase font-bold">Subjects</span>
-               <button onClick={() => setShowAddSubject(true)} className="hover:text-blue-400"><BookOpen size={14}/></button>
+        <div className="flex justify-between items-center text-[10px] uppercase text-slate-500 font-bold mb-2"><span>Students</span><button onClick={addStudent}><Plus size={14}/></button></div>
+        <div className="flex-1 overflow-auto">
+          {students.map(s => (
+            <div key={s.id} onClick={()=>selectStu(s)} className={`p-2 cursor-pointer rounded mb-1 flex justify-between items-center ${selectedStudent?.id === s.id ? 'bg-blue-600' : 'hover:bg-white/10'}`}>
+              <span className="truncate">{s.name}</span>
+              {commentData.submission_status === 'approved' && <CheckCircle size={12}/>}
             </div>
-            <div className="mb-4 text-[10px] text-slate-500 italic">{subjects.length} subjects added</div>
-
-            <div className="flex justify-between items-center mb-2">
-               <span className="text-[10px] text-slate-400 uppercase font-bold">Students</span>
-               <button onClick={() => setShowAddStudent(true)} className="p-1 bg-blue-600 rounded"><Plus size={14}/></button>
-            </div>
-            <div className="flex-1 overflow-auto space-y-1">
-              {students.map(s => (
-                <div key={s.id} onClick={() => loadStudent(s)} className={`p-2 cursor-pointer rounded text-sm ${selectedStudent?.id === s.id ? 'bg-blue-600' : 'hover:bg-slate-800'}`}>{s.name}</div>
-              ))}
-            </div>
-          </>
-        )}
-        <button onClick={onLogout} className="text-left p-2 text-red-400 text-sm flex items-center gap-2 border-t border-slate-700 pt-4"><LogOut size={16}/> Logout</button>
+          ))}
+        </div>
+        <button onClick={onLogout} className="flex items-center gap-2 text-red-400 mt-4 p-2"><LogOut size={16}/> Logout</button>
       </div>
 
-      <div className="flex-1 p-8 overflow-auto">
-        {!selectedStudent ? (
-           <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center">
-              <School size={64} className="mb-4 opacity-10"/>
-              <p>1. Create/Select a Class<br/>2. Add Subjects<br/>3. Register Students</p>
-           </div>
-        ) : (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow flex justify-between items-center border-l-8 border-blue-600">
-               <div><h1 className="text-2xl font-bold">{selectedStudent.name}</h1><p className="text-xs uppercase font-bold text-slate-400">{commentData.submission_status}</p></div>
-               <div className="flex gap-2">
-                  <button onClick={() => setPreviewMode('full')} className="bg-slate-100 px-4 py-2 rounded font-bold">Preview</button>
-                  <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded font-bold">Submit</button>
-               </div>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="p-4 border-b flex items-center gap-4">
+          <button onClick={()=>setSide(true)} className="lg:hidden"><Menu/></button>
+          <div className="flex-1"><h2 className="font-bold">{selectedStudent?.name || "Select Student"}</h2><p className="text-xs text-slate-400">{selectedStudent?.admission_no}</p></div>
+          {selectedStudent && <div className="flex gap-2"><button onClick={()=>setPreview('ca')} className="bg-slate-100 p-2 rounded"><Search size={18}/></button><button onClick={()=>setPreview('full')} className="bg-slate-100 p-2 rounded font-bold">PDF</button><button onClick={save} className="bg-blue-600 text-white px-4 py-2 rounded font-bold">{loading ? <Loader2 className="animate-spin" size={18}/> : 'Save'}</button></div>}
+        </div>
+        {selectedStudent ? (
+          <div className="flex-1 overflow-auto p-6">
+            <div className="flex gap-4 border-b mb-6 font-bold text-slate-400">
+              {['scores', 'traits', 'settings'].map(x=><button key={x} onClick={()=>setTab(x)} className={`pb-2 capitalize ${tab===x ? 'text-blue-600 border-b-2 border-blue-600' : ''}`}>{x}</button>)}
             </div>
-            <div className="flex gap-6 border-b text-sm font-bold">
-               {['scores', 'traits', 'remarks'].map(t => (
-                 <button key={t} onClick={() => setActiveTab(t)} className={`pb-2 capitalize ${activeTab === t ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-400'}`}>{t}</button>
-               ))}
-            </div>
-            {activeTab === 'scores' && (
-               <div className="bg-white rounded-xl shadow overflow-hidden">
-                  <table className="w-full text-left">
-                     <thead className="bg-slate-50 border-b"><tr><th className="p-4">Subject</th><th>CA (40)</th><th>Exam (60)</th><th>Total</th></tr></thead>
-                     <tbody>
-                        {subjects.map(sub => (
-                           <tr key={sub.id} className="border-b">
-                              <td className="p-4">{sub.name}</td>
-                              <td><input type="number" className="w-16 border rounded p-1" value={scores[sub.id]?.ca || ''} onChange={e => setScores({...scores, [sub.id]: {...(scores[sub.id]||{}), ca: e.target.value}})} /></td>
-                              <td><input type="number" className="w-16 border rounded p-1" value={scores[sub.id]?.exam || ''} onChange={e => setScores({...scores, [sub.id]: {...(scores[sub.id]||{}), exam: e.target.value}})} /></td>
-                              <td className="font-bold">{(parseFloat(scores[sub.id]?.ca)||0) + (parseFloat(scores[sub.id]?.exam)||0)}</td>
-                           </tr>
-                        ))}
-                     </tbody>
-                  </table>
-               </div>
-            )}
-            {activeTab === 'traits' && (
-               <div className="bg-white p-6 rounded-xl shadow grid grid-cols-2 gap-4">
-                  {BEHAVIORS.map(b => (
-                     <div key={b} className="flex justify-between items-center p-2 bg-slate-50 rounded">
-                        <span className="text-sm">{b}</span>
-                        <select className="text-xs border p-1 rounded" value={commentData.behaviors?.[b] || ''} onChange={e => setCommentData({...commentData, behaviors: {...commentData.behaviors, [b]: e.target.value}})}>
-                           <option value="">Rate</option>{RATINGS.map(r => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                     </div>
+            {tab === 'scores' && (
+              <table className="w-full text-left">
+                <thead><tr className="text-xs text-slate-400 border-b"><th>Subject</th><th>CA (40)</th><th>Exam (60)</th></tr></thead>
+                <tbody>
+                  {subjects.map(s => (
+                    <tr key={s.id} className="border-b">
+                      <td className="py-4 font-bold">{s.name}</td>
+                      <td><input type="number" className="border p-2 rounded w-20" value={scores[s.id]?.ca || ''} onChange={(e)=>setScores({...scores, [s.id]: {...scores[s.id], ca: e.target.value}})}/></td>
+                      <td><input type="number" className="border p-2 rounded w-20" value={scores[s.id]?.exam || ''} onChange={(e)=>setScores({...scores, [s.id]: {...scores[s.id], exam: e.target.value}})}/></td>
+                    </tr>
                   ))}
-               </div>
+                </tbody>
+              </table>
             )}
-            {activeTab === 'remarks' && <textarea className="w-full border p-4 h-32 rounded-lg shadow" value={commentData.tutor_comment || ''} onChange={e => setCommentData({...commentData, tutor_comment: e.target.value})} placeholder="Teacher's Remark..."/>}
+            {tab === 'traits' && (
+              <div className="grid grid-cols-2 gap-4">
+                {BEHAVIORS.map(b => (
+                  <div key={b} className="flex justify-between items-center p-3 bg-slate-50 rounded"><span>{b}</span><select value={commentData.behaviors?.[b] || ''} onChange={(e)=>setCommentData({...commentData, behaviors: {...commentData.behaviors, [b]: e.target.value}})}>
+                    <option value="">Rate</option>{RATINGS.map(r=><option key={r} value={r}>{r}</option>)}
+                  </select></div>
+                ))}
+              </div>
+            )}
+            {tab === 'settings' && (
+              <div className="space-y-4">
+                <div className="bg-blue-50 p-4 rounded-xl flex items-center gap-3"><Settings className="text-blue-600"/><p className="text-sm font-bold">Class Settings & Remarks</p></div>
+                <textarea className="w-full border p-4 h-32 rounded" placeholder="Teacher's remark..." value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})}/>
+              </div>
+            )}
           </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-300"><Users size={64}/><p className="mt-4">Select a student from the sidebar</p></div>
         )}
       </div>
 
-      {/* Modals */}
-      {showAddClass && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleCreateClass} className="bg-white p-6 rounded-xl max-w-sm w-full shadow-2xl">
-            <h3 className="font-bold mb-4">Create New Class</h3>
-            <input className="w-full border p-2 rounded mb-4" placeholder="Class Name (e.g. Primary 1)" onChange={e => setNewClassName(e.target.value)} required />
-            <div className="flex gap-2">
-               <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded font-bold">Create</button>
-               <button type="button" onClick={() => setShowAddClass(false)} className="flex-1 text-slate-400">Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {showAddSubject && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleAddSubject} className="bg-white p-6 rounded-xl max-w-sm w-full shadow-2xl">
-            <h3 className="font-bold mb-4">Add Subject to Class</h3>
-            <input className="w-full border p-2 rounded mb-4" placeholder="Subject Name (e.g. Mathematics)" onChange={e => setNewSubjectName(e.target.value)} required />
-            <div className="flex gap-2">
-               <button type="submit" className="flex-1 bg-indigo-600 text-white py-2 rounded font-bold">Add</button>
-               <button type="button" onClick={() => setShowAddSubject(false)} className="flex-1 text-slate-400">Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {showAddStudent && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleRegisterStudent} className="bg-white p-6 rounded-xl max-w-sm w-full shadow-2xl">
-            <h3 className="font-bold mb-4">Register Student</h3>
-            <div className="space-y-3">
-               <input className="w-full border p-2 rounded" placeholder="Full Name" onChange={e => setNewStudent({...newStudent, name: e.target.value})} required />
-               <input className="w-full border p-2 rounded" placeholder="Admission No" onChange={e => setNewStudent({...newStudent, admission_no: e.target.value})} required />
-               <select className="w-full border p-2 rounded" onChange={e => setNewStudent({...newStudent, gender: e.target.value})}>
-                  <option value="Male">Male</option><option value="Female">Female</option>
-               </select>
-               <div className="flex gap-2">
-                  <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded font-bold">Register</button>
-                  <button type="button" onClick={() => setShowAddStudent(false)} className="flex-1 text-slate-400">Cancel</button>
-               </div>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {previewMode && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col p-4">
-          <div className="bg-white p-4 flex justify-between rounded-t-xl">
-             <button onClick={() => setPreviewMode(null)} className="font-bold text-red-500">Close</button>
-             <PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={studentResults} comments={commentData} />} fileName="result.pdf">
-                <button className="bg-blue-600 text-white px-4 py-2 rounded font-bold">Download</button>
-             </PDFDownloadLink>
-          </div>
-          <PDFViewer className="flex-1 rounded-b-xl"><ResultPDF school={school} student={selectedStudent} results={studentResults} comments={commentData} /></PDFViewer>
+      {preview && (
+        <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col p-4">
+          <div className="bg-white p-4 flex justify-between rounded-t-xl"><button onClick={()=>setPreview(null)} className="font-bold text-red-500">Close</button><PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={results} comments={commentData} type={preview}/>} fileName="result.pdf"><button className="bg-blue-600 text-white px-4 py-2 rounded">Download</button></PDFDownloadLink></div>
+          <PDFViewer className="flex-1 rounded-b-xl"><ResultPDF school={school} student={selectedStudent} results={results} comments={commentData} type={preview}/></PDFViewer>
         </div>
       )}
     </div>
   );
 };
 
-// ==================== ADMIN DASHBOARD ====================
 const AdminDashboard = ({ profile, onLogout }) => {
   const [school, setSchool] = useState(null);
-  const [classList, setClassList] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState('review');
   const [students, setStudents] = useState([]);
-  const [selectedStudent, setSelectedStudent] = useState(null);
-  const [commentData, setCommentData] = useState({ behaviors: {} });
-  const [studentResults, setStudentResults] = useState([]);
-  const [previewMode, setPreviewMode] = useState(null);
 
-  const fetchData = useCallback(async () => {
-    const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
-    setSchool(s);
-    const { data: cls } = await supabase.from('classes').select('*').eq('school_id', profile.school_id).order('name');
-    setClassList(cls || []);
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
+    setSchool(data);
+    const { data: st } = await supabase.from('students').select('*').eq('school_id', profile.school_id);
+    setStudents(st || []);
   }, [profile.school_id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { load(); }, [load]);
 
-  const loadClass = async (id) => {
-    const { data: stu } = await supabase.from('students').select('*').eq('class_id', id).order('name');
-    setStudents(stu || []);
-  };
-
-  const loadStudent = async (stu) => {
-    setSelectedStudent(stu);
-    const { data: res } = await supabase.from('results').select('*, subjects(name)').eq('student_id', stu.id);
-    const { data: comm } = await supabase.from('comments').select('*').eq('student_id', stu.id).maybeSingle();
-    setStudentResults(res || []);
-    setCommentData(comm || { behaviors: {}, submission_status: 'draft' });
-  };
-
-  const handleApprove = async () => {
-    await supabase.from('comments').update({ submission_status: 'approved', principal_comment: commentData.principal_comment }).eq('student_id', selectedStudent.id);
-    alert("Approved!");
-    loadStudent(selectedStudent);
+  const uploadLogo = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setUploading(true);
+    const name = `logo-${school.id}-${Date.now()}`;
+    const { data } = await supabase.storage.from('school-logos').upload(name, file);
+    const { data: { publicUrl } } = supabase.storage.from('school-logos').getPublicUrl(data.path);
+    await supabase.from('schools').update({ logo_url: publicUrl }).eq('id', school.id);
+    setUploading(false); load();
   };
 
   return (
     <div className="flex h-screen bg-slate-50">
-      <div className="w-64 bg-slate-900 text-white p-4">
-        <div className="font-bold mb-8 flex items-center gap-2"><Shield/> Admin</div>
-        <select className="w-full bg-slate-800 p-2 rounded mb-4" onChange={e => loadClass(e.target.value)}>
-          <option>Select Class</option>
-          {classList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <div className="flex-1 overflow-auto">
-          {students.map(s => (
-            <div key={s.id} onClick={() => loadStudent(s)} className={`p-2 cursor-pointer rounded text-sm ${selectedStudent?.id === s.id ? 'bg-blue-600' : ''}`}>{s.name}</div>
-          ))}
-        </div>
-        <button onClick={onLogout} className="text-left p-2 text-red-400 mt-4 flex items-center gap-2 border-t border-slate-700 pt-4"><LogOut size={16}/> Logout</button>
+      <div className="w-64 bg-blue-900 text-white p-4 flex flex-col">
+        <h1 className="font-bold mb-8 flex items-center gap-2"><Settings/> Admin</h1>
+        <button onClick={()=>setActiveTab('review')} className={`p-2 text-left flex items-center gap-2 ${activeTab === 'review' ? 'bg-blue-800 rounded' : ''}`}><Users size={16}/> Review Results</button>
+        <button onClick={()=>setActiveTab('setup')} className={`p-2 text-left flex items-center gap-2 mt-2 ${activeTab === 'setup' ? 'bg-blue-800 rounded' : ''}`}><Upload size={16}/> Logo Setup</button>
+        <button onClick={onLogout} className="mt-auto p-2 flex items-center gap-2 text-red-300"><LogOut size={16}/> Logout</button>
       </div>
       <div className="flex-1 p-8 overflow-auto">
-        {selectedStudent ? (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow flex justify-between items-center border-t-8 border-green-600">
-               <div><h1 className="text-2xl font-bold">{selectedStudent.name}</h1><p className="text-xs font-bold text-orange-500 uppercase">{commentData.submission_status}</p></div>
-               <div className="flex gap-2">
-                 <button onClick={() => setPreviewMode('full')} className="bg-slate-100 px-4 py-2 rounded">Review</button>
-                 <button onClick={handleApprove} className="bg-green-600 text-white px-6 py-2 rounded font-bold shadow-lg">Approve</button>
-               </div>
-            </div>
-            <textarea className="w-full border p-4 h-32 rounded-lg shadow" value={commentData.principal_comment || ''} onChange={e => setCommentData({...commentData, principal_comment: e.target.value})} placeholder="Final verdict..."/>
+        {activeTab === 'setup' ? (
+          <div className="bg-white p-10 rounded-2xl shadow-sm text-center max-w-sm mx-auto">
+            {school?.logo_url && <img src={school.logo_url} alt="Logo" className="h-24 mx-auto mb-6"/>}
+            <label className="bg-slate-100 p-6 rounded-xl border-2 border-dashed block cursor-pointer">
+              {uploading ? <Loader2 className="animate-spin mx-auto"/> : <Upload className="mx-auto mb-2"/>}
+              <p className="font-bold">Change Logo</p>
+              <input type="file" className="hidden" onChange={uploadLogo}/>
+            </label>
           </div>
-        ) : <div className="text-center text-slate-400 mt-20">Select a student</div>}
+        ) : (
+          <div className="bg-white rounded-xl shadow overflow-hidden">
+             <div className="p-4 border-b font-bold">Pending Approvals ({students.length})</div>
+             <div className="p-4 text-slate-400 italic">Select students via teacher dashboard logic to approve...</div>
+          </div>
+        )}
       </div>
-      {previewMode && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
-          <button onClick={() => setPreviewMode(null)} className="text-white p-4 self-end">Close</button>
-          <PDFViewer className="flex-1"><ResultPDF school={school} student={selectedStudent} results={studentResults} comments={commentData} /></PDFViewer>
-        </div>
-      )}
     </div>
   );
 };
 
 // ==================== PARENT PORTAL & AUTH ====================
+
+const Auth = ({ onParent }) => {
+  const [mode, setMode] = useState('login');
+  const [form, setForm] = useState({ email: '', password: '', name: '', schoolId: '' });
+  const [loading, setLoading] = useState(false);
+  const [schools, setSchools] = useState([]);
+
+  useEffect(() => { supabase.from('schools').select('id, name').then(({data}) => setSchools(data || [])); }, []);
+
+  const handle = async (e) => {
+    e.preventDefault(); setLoading(true);
+    try {
+      if (mode === 'login') await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
+      else {
+        const { data: { user } } = await supabase.auth.signUp({ email: form.email, password: form.password });
+        if (mode === 'school_reg') {
+          const { data: s } = await supabase.from('schools').insert({ owner_id: user.id, name: form.name }).select().single();
+          await supabase.from('profiles').insert({ id: user.id, full_name: form.name, role: 'admin', school_id: s.id });
+        } else {
+          await supabase.from('profiles').insert({ id: user.id, full_name: form.name, role: 'teacher', school_id: form.schoolId });
+        }
+        alert("Verify email then login.");
+      }
+    } catch (err) { alert(err.message); }
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border-t-8 border-blue-600">
+        <h1 className="text-3xl font-black text-center mb-6">SPRINGFORTH</h1>
+        <div className="flex gap-4 mb-6 border-b text-xs font-bold uppercase pb-2">
+          {['login', 'school_reg', 'teacher_reg'].map(m => (
+            <button key={m} onClick={() => setMode(m)} className={mode === m ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}>{m.replace('_',' ')}</button>
+          ))}
+        </div>
+        <form onSubmit={handle} className="space-y-4">
+          {mode !== 'login' && <input className="w-full border p-3 rounded-xl" placeholder="Full Name" onChange={(e)=>setForm({...form, name: e.target.value})} required />}
+          <input className="w-full border p-3 rounded-xl" type="email" placeholder="Email" onChange={(e)=>setForm({...form, email: e.target.value})} required />
+          <input className="w-full border p-3 rounded-xl" type="password" placeholder="Password" onChange={(e)=>setForm({...form, password: e.target.value})} required />
+          {mode === 'teacher_reg' && (
+            <select className="w-full border p-3 rounded-xl bg-white" onChange={(e)=>setForm({...form, schoolId: e.target.value})} required>
+              <option value="">Select School</option>
+              {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+          <button className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold flex justify-center">{loading ? <Loader2 className="animate-spin"/> : 'Enter Portal'}</button>
+        </form>
+        <button onClick={onParent} className="w-full bg-slate-50 py-3 rounded-xl mt-6 font-bold flex justify-center items-center gap-2"><Search size={18}/> Parent Portal</button>
+      </div>
+    </div>
+  );
+};
+
 const ParentPortal = ({ onBack }) => {
   const [id, setId] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const check = async () => {
+
+  const find = async () => {
     setLoading(true);
-    const { data: stu } = await supabase.from('students').select('*, schools(*), classes(*), results(*, subjects(*)), comments(*)').eq('admission_no', id).maybeSingle();
-    if (stu && stu.comments?.[0]?.submission_status === 'approved') setData(stu);
-    else alert("Not found or not published.");
+    const { data: st } = await supabase.from('students').select('*, schools(*), classes(*), results(*, subjects(*)), comments(*)').eq('admission_no', id).maybeSingle();
+    if (st && st.comments?.[0]?.submission_status === 'approved') setData(st);
+    else alert("Not published.");
     setLoading(false);
   };
+
   if (data) return (
     <div className="fixed inset-0 z-50 bg-white flex flex-col">
-      <button onClick={() => setData(null)} className="p-4 bg-slate-100 font-bold">← Back</button>
-      <PDFViewer className="flex-1"><ResultPDF school={data.schools} student={data} results={data.results} comments={data.comments[0]} /></PDFViewer>
+      <button onClick={()=>setData(null)} className="p-4 bg-slate-100 font-bold">← Back</button>
+      <PDFViewer className="flex-1 border-none"><ResultPDF school={data.schools} student={data} results={data.results} comments={data.comments[0]} /></PDFViewer>
     </div>
   );
+
   return (
-    <div className="min-h-screen bg-green-50 flex items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl max-w-sm w-full text-center">
-        <Search size={48} className="mx-auto text-green-600 mb-4"/>
-        <h2 className="text-2xl font-bold mb-4">Parent Portal</h2>
-        <input className="w-full border-2 p-3 rounded mb-4 text-center font-bold" placeholder="Admission Number" onChange={e => setId(e.target.value)} />
-        <button onClick={check} className="w-full bg-green-600 text-white py-3 rounded font-bold">{loading ? '...' : 'View Report'}</button>
+    <div className="min-h-screen bg-blue-50 flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full text-center">
+        <Search size={48} className="mx-auto text-blue-600 mb-4 bg-blue-50 p-2 rounded-full"/>
+        <h2 className="text-2xl font-black mb-4">Parent Portal</h2>
+        <input className="w-full border-2 p-3 rounded-xl mb-4 text-center font-bold" placeholder="SF-2025-XXXX" onChange={(e)=>setId(e.target.value)} />
+        <button onClick={find} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">{loading ? <Loader2 className="animate-spin mx-auto"/> : 'Check Report Card'}</button>
         <button onClick={onBack} className="mt-4 text-slate-400 block w-full">Staff Login</button>
       </div>
     </div>
   );
 };
 
-const Auth = ({ onParent }) => {
-  const [mode, setMode] = useState('login');
-  const [loading, setLoading] = useState(false);
-  const [schools, setSchools] = useState([]);
-  const [form, setForm] = useState({ email: '', password: '', name: '', schoolId: '' });
-  useEffect(() => { supabase.from('schools').select('id, name').then(({data}) => setSchools(data || [])); }, []);
-  const handleAuth = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      if (mode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
-        if (error) throw error;
-      } else {
-        const { data: auth, error: ae } = await supabase.auth.signUp({ email: form.email, password: form.password });
-        if (ae) throw ae;
-        if (mode === 'school_reg') {
-          const { data: school } = await supabase.from('schools').insert({ owner_id: auth.user.id, name: form.name }).select().single();
-          await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'admin', school_id: school.id });
-        } else {
-          await supabase.from('profiles').insert({ id: auth.user.id, full_name: form.name, role: 'teacher', school_id: form.schoolId });
-        }
-        alert("Verify your email then login.");
-      }
-    } catch (err) { alert(err.message); }
-    setLoading(false);
-  };
-  return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border-t-8 border-blue-600 text-center">
-        <h1 className="text-3xl font-black mb-6">Springforth</h1>
-        <div className="flex gap-4 mb-6 border-b pb-2 text-[10px] font-bold uppercase">
-          {['login', 'school_reg', 'teacher_reg'].map(m => (
-            <button key={m} onClick={() => setMode(m)} className={mode === m ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}>{m.replace('_',' ')}</button>
-          ))}
-        </div>
-        <form onSubmit={handleAuth} className="space-y-4">
-          {mode !== 'login' && <input className="w-full border p-3 rounded" placeholder="Full Name" onChange={e => setForm({...form, name: e.target.value})} required />}
-          <input className="w-full border p-3 rounded" type="email" placeholder="Email" onChange={e => setForm({...form, email: e.target.value})} required />
-          <input className="w-full border p-3 rounded" type="password" placeholder="Password" onChange={e => setForm({...form, password: e.target.value})} required />
-          {mode === 'teacher_reg' && (
-            <select className="w-full border p-3 rounded" onChange={e => setForm({...form, schoolId: e.target.value})} required>
-              <option value="">Select School</option>
-              {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          )}
-          <button className="w-full bg-blue-600 text-white py-3 rounded font-bold" disabled={loading}>{loading ? '...' : 'Enter'}</button>
-        </form>
-        <button onClick={onParent} className="w-full bg-green-50 text-green-700 py-3 rounded mt-6 font-bold flex items-center justify-center gap-2"><Search size={18}/> Parent Portal</button>
-      </div>
-    </div>
-  );
-};
-
-// ==================== APP ROOT ====================
 const App = () => {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
