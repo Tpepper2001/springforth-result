@@ -221,7 +221,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           <option value="">Classes</option>
           {classList.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <div className="flex justify-between items-center text-[10px] uppercase text-slate-500 font-bold mb-2"><span>Students</span><button onClick={addStudent}><Plus size={14}/></button></div>
+        <div className="flex justify-between items-center text-[10px] uppercase text-slate-500 font-bold mb-2"><span>Students</span><button onClick={addStudent}><size={14}/></button></div>
         <div className="flex-1 overflow-auto">
           {students.map(s => (
             <div key={s.id} onClick={()=>selectStu(s)} className={`p-2 cursor-pointer rounded mb-1 flex justify-between items-center ${selectedStudent?.id === s.id ? 'bg-blue-600' : 'hover:bg-white/10'}`}>
