@@ -831,8 +831,6 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 // Then make these modifications:
 
 const AdminDashboard = ({ profile, onLogout }) => {
-  // ALL THE SAME STATE AS TEACHER DASHBOARD
-  const [activeTab, setActiveTab] = useState('scores');
   const [school, setSchool] = useState(null);
   const [classList, setClassList] = useState([]);
   const [selectedClassId, setSelectedClassId] = useState('');
@@ -845,131 +843,123 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [saving, setSaving] = useState(false);
   const [previewMode, setPreviewMode] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [uploadingLogo, setUploadingLogo] = useState(false); // NEW
+  const [activeTab, setActiveTab] = useState('scores');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
-  // SAME fetchData, loadClass, loadStudent as Teacher
+  const fetchData = useCallback(async () => {
+    const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
+    setSchool(s);
+    const { data: cls } = await supabase.from('classes').select('*').eq('school_id', profile.school_id).order('name');
+    setClassList(cls || []);
+  }, [profile.school_id]);
 
-  // MODIFIED handleSave - saves as 'approved' instead of 'pending'
-  const handleSave = async (status = 'approved') => {
-    // Same code as TeacherDashboard
-    // Just change default status from 'draft' to 'approved'
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const loadClass = async (id) => {
+    setSelectedClassId(id);
+    const { data: stu } = await supabase.from('students').select('*').eq('class_id', id).order('name');
+    setStudents(stu || []);
+    const { data: sub } = await supabase.from('subjects').select('*').eq('class_id', id).order('name');
+    setSubjects(sub || []);
   };
 
-  // NEW: Logo upload handler
+  const loadStudent = async (stu) => {
+    setSelectedStudent(stu);
+    const { data: res } = await supabase.from('results').select('*, subjects(name)').eq('student_id', stu.id);
+    const { data: comm } = await supabase.from('comments').select('*').eq('student_id', stu.id).maybeSingle();
+    setScores(res?.reduce((acc, r) => ({ ...acc, [r.subject_id]: r.scores }), {}) || {});
+    setStudentResults(res || []);
+    setCommentData(comm || { behaviors: {}, submission_status: 'draft' });
+  };
+
+  const handleSave = async (status = 'approved') => {
+    setSaving(true);
+    const updates = subjects.map(s => ({
+      student_id: selectedStudent.id,
+      subject_id: s.id,
+      scores: scores[s.id] || {},
+      total: (parseFloat(scores[s.id]?.ca) || 0) + (parseFloat(scores[s.id]?.exam) || 0)
+    }));
+    await supabase.from('results').delete().eq('student_id', selectedStudent.id);
+    await supabase.from('results').insert(updates);
+    await supabase.from('comments').upsert({
+      student_id: selectedStudent.id,
+      school_id: school.id,
+      tutor_comment: commentData.tutor_comment,
+      principal_comment: commentData.principal_comment,
+      behaviors: commentData.behaviors,
+      submission_status: status
+    });
+    setSaving(false);
+    alert("Results Approved & Saved!");
+    loadStudent(selectedStudent);
+  };
+
   const handleLogoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file');
-      return;
-    }
-
     setUploadingLogo(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${school.id}-logo-${Date.now()}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('school-logos')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('school-logos')
-        .getPublicUrl(fileName);
-
-      const { error: updateError } = await supabase
-        .from('schools')
-        .update({ logo_url: publicUrl })
-        .eq('id', school.id);
-
-      if (updateError) throw updateError;
-
-      alert('Logo uploaded successfully!');
-      fetchData();
-    } catch (err) {
-      console.error('Logo upload error:', err);
-      alert('Error uploading logo: ' + err.message);
-    } finally {
-      setUploadingLogo(false);
-    }
+    const fileName = `${school.id}-logo-${Date.now()}`;
+    await supabase.storage.from('school-logos').upload(fileName, file);
+    const { data: { publicUrl } } = supabase.storage.from('school-logos').getPublicUrl(fileName);
+    await supabase.from('schools').update({ logo_url: publicUrl }).eq('id', school.id);
+    fetchData();
+    setUploadingLogo(false);
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-800 overflow-hidden">
-      {/* SAME SIDEBAR AS TEACHER BUT ADD SETTINGS BUTTON */}
-      <div className="border-t border-slate-700 pt-4 space-y-2">
-        <button onClick={() => setActiveTab('settings')} className="w-full text-left p-2 text-sm flex items-center gap-2 hover:bg-slate-800 rounded transition"><Settings size={16}/> School Management</button>
-        <button onClick={onLogout} className="w-full text-left p-2 text-sm text-red-400 flex items-center gap-2 hover:bg-slate-800 rounded transition"><LogOut size={16}/> Logout</button>
-      </div>
-
-      {/* MAIN CONTENT */}
-      <div className="flex-1 overflow-auto p-4 lg:p-8 w-full">
-        {activeTab === 'settings' ? (
-          <div className="space-y-6">
-            {/* LOGO UPLOAD SECTION */}
-            <div className="bg-white p-4 lg:p-8 rounded-xl shadow-sm border">
-              <h2 className="text-xl lg:text-2xl font-bold mb-6">School Logo</h2>
-              <div className="flex flex-col items-center gap-4">
-                {school?.logo_url && (
-                  <img src={school.logo_url} alt="School Logo" className="w-32 h-32 object-contain border-2 rounded-lg" />
-                )}
-                <label className="cursor-pointer">
-                  <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" disabled={uploadingLogo} />
-                  <div className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 transition flex items-center gap-2">
-                    {uploadingLogo ? <Loader2 className="animate-spin" size={20} /> : <Upload size={20} />}
-                    {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
-                  </div>
-                </label>
-              </div>
+    <div className="flex h-screen bg-slate-50">
+      {/* Sidebar */}
+      <div className="w-64 bg-slate-900 text-white p-4 flex flex-col">
+        <div className="font-bold mb-8 flex items-center gap-2"><School/> {school?.name}</div>
+        <select className="bg-slate-800 p-2 rounded mb-4 text-sm" onChange={(e) => loadClass(e.target.value)}>
+          <option>Select Class</option>
+          {classList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <div className="flex-1 overflow-auto">
+          {students.map(s => (
+            <div key={s.id} onClick={() => loadStudent(s)} className={`p-2 cursor-pointer rounded text-sm ${selectedStudent?.id === s.id ? 'bg-blue-600' : ''}`}>
+              {s.name}
             </div>
-
-            {/* ADD CLASS/STUDENT/SUBJECT MANAGEMENT HERE */}
-            {/* (Copy from previous implementations) */}
-          </div>
-        ) : !selectedStudent ? (
-          /* SAME AS TEACHER */
-        ) : (
-          <div className="space-y-4 lg:space-y-6">
-            {/* SAME HEADER BUT WITH 'Approve & Save' BUTTON */}
-            <button onClick={() => handleSave('approved')} className="bg-green-600 text-white px-4 lg:px-6 py-2 rounded-lg font-bold">
-              {saving ? <Loader2 className="animate-spin" /> : 'Approve & Save'}
-            </button>
-
-            {/* SCORES TAB - SAME AS TEACHER */}
-            
-            {/* TRAITS TAB - SAME AS TEACHER */}
-            
-            {/* REMARKS TAB - ADD HEADMISTRESS COMMENT */}
-            {activeTab === 'remarks' && (
-              <div className="space-y-6">
-                <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-blue-200">
-                  <label className="text-sm font-bold text-blue-700 uppercase mb-2 block">Teacher's Comment</label>
-                  <textarea 
-                    className="w-full border-2 border-blue-300 p-3 rounded-lg h-32"
-                    value={commentData.tutor_comment || ''} 
-                    onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})}
-                  />
-                </div>
-
-                {/* ADMIN CAN WRITE HEADMISTRESS COMMENT */}
-                <div className="bg-white p-6 rounded-xl shadow-sm border-2 border-purple-200">
-                  <label className="text-sm font-bold text-purple-700 uppercase mb-2 block">Headmistress's Comment</label>
-                  <textarea 
-                    className="w-full border-2 border-purple-300 p-3 rounded-lg h-32"
-                    value={commentData.principal_comment || ''} 
-                    onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+          ))}
+        </div>
+        <button onClick={() => setActiveTab('settings')} className="text-left p-2 text-sm flex items-center gap-2 mt-2"><Settings size={16}/> Settings</button>
+        <button onClick={onLogout} className="text-left p-2 text-sm text-red-400 flex items-center gap-2"><LogOut size={16}/> Logout</button>
       </div>
 
-      {/* SAME PDF PREVIEW AS TEACHER */}
+      {/* Main Content */}
+      <div className="flex-1 p-8 overflow-auto">
+        {activeTab === 'settings' ? (
+          <div className="bg-white p-6 rounded-xl shadow-sm">
+            <h2 className="text-xl font-bold mb-4">School Logo</h2>
+            <input type="file" onChange={handleLogoUpload} />
+            {uploadingLogo && <Loader2 className="animate-spin mt-2" />}
+          </div>
+        ) : selectedStudent ? (
+          <div className="space-y-6">
+             <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm">
+                <h1 className="text-2xl font-bold">{selectedStudent.name}</h1>
+                <div className="flex gap-2">
+                  <button onClick={() => setPreviewMode('full')} className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-bold">Preview</button>
+                  <button onClick={() => handleSave('approved')} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold">Approve & Save</button>
+                </div>
+             </div>
+             {/* Score inputs and remarks would go here similar to Teacher dashboard */}
+             <textarea 
+               className="w-full border p-4 rounded-xl" 
+               placeholder="Headmistress Comment" 
+               value={commentData.principal_comment || ''} 
+               onChange={(e) => setCommentData({...commentData, principal_comment: e.target.value})}
+             />
+          </div>
+        ) : <div className="text-center text-slate-400">Select a student</div>}
+      </div>
+      {previewMode && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
+          <button onClick={() => setPreviewMode(null)} className="text-white p-4 self-end">Close ✕</button>
+          <PDFViewer className="flex-1"><ResultPDF school={school} student={selectedStudent} results={studentResults} comments={commentData} /></PDFViewer>
+        </div>
+      )}
     </div>
   );
 };
