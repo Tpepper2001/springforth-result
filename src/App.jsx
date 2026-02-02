@@ -1,3 +1,5 @@
+--- START OF FILE Paste February 02, 2026 - 6:45PM ---
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink, Image } from '@react-pdf/renderer';
@@ -274,20 +276,27 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [commentData, setCommentData] = useState({});
   const [loading, setLoading] = useState(false);
 
+  // load now handles refreshing specific student data if one is selected
   const load = useCallback(async () => {
     const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
     const { data: st } = await supabase.from('students').select('*, classes(name)').eq('school_id', profile.school_id);
     setSchool(s || {}); setStudents(st || []);
-  }, [profile.school_id]);
+
+    // Real-time enhancement: If a student is currently being reviewed, refresh their specific data
+    if (selectedStudent) {
+      const { data: co } = await supabase.from('comments').select('*').eq('student_id', selectedStudent.id).maybeSingle();
+      setCommentData(co || {});
+    }
+  }, [profile.school_id, selectedStudent]);
 
   useEffect(() => { 
     load(); 
     const channel = supabase.channel('admin-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `school_id=eq.${profile.school_id}` }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'results' }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [load]);
+  }, [load, profile.school_id]);
 
   const updateProfile = async () => {
     await supabase.from('schools').update({ name: school.name, address: school.address, contact_info: school.contact_info }).eq('id', school.id);
@@ -352,6 +361,10 @@ const AdminDashboard = ({ profile, onLogout }) => {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-8 rounded-3xl w-full max-w-xl">
             <h3 className="text-xl font-black mb-4">Final Approval: {selectedStudent.name}</h3>
+            <div className="mb-4 p-4 bg-indigo-50 rounded-2xl">
+                <p className="text-[10px] font-black uppercase text-indigo-400 mb-1">Teacher's Remark</p>
+                <p className="text-sm italic text-indigo-900">"{commentData.tutor_comment || 'No remark yet...'}"</p>
+            </div>
             <textarea className="w-full border-2 p-4 h-40 rounded-xl mb-6 outline-none focus:border-indigo-500" placeholder="Principal remark..." value={commentData.principal_comment || ''} onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})} />
             <div className="flex gap-4"><button onClick={approve} className="flex-1 bg-indigo-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-indigo-100 uppercase tracking-widest text-xs">Approve & Publish</button><button onClick={()=>setSelectedStudent(null)} className="px-6 font-bold text-slate-400 uppercase text-xs">Cancel</button></div>
           </div>
