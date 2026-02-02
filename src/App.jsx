@@ -347,11 +347,13 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [tab, setTab] = useState('review');
   const [dataList, setDataList] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [commentData, setCommentData] = useState({});
 
   const loadAll = useCallback(async () => {
+    setLoading(true);
     const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
     const { data: cl } = await supabase.from('classes').select('*').eq('school_id', profile.school_id);
     setSchool(s); setClasses(cl || []);
@@ -364,6 +366,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
         const { data: sub } = await supabase.from('subjects').select('*, classes(name)').eq('classes.school_id', profile.school_id);
         setDataList(sub || []);
     }
+    setLoading(false);
   }, [profile.school_id, tab]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -417,7 +420,12 @@ const AdminDashboard = ({ profile, onLogout }) => {
             {tab === 'review' && <button onClick={addStudent} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2"><Plus/> Add Student</button>}
         </div>
 
-        {tab === 'setup' ? (
+        {loading ? (
+          <div className="flex flex-col items-center justify-center p-20 text-slate-400">
+            <Loader2 className="animate-spin mb-4" size={48}/>
+            <p className="font-bold">Syncing Records...</p>
+          </div>
+        ) : tab === 'setup' ? (
           <div className="bg-white p-12 rounded-[40px] shadow-xl text-center max-w-md mx-auto">
             {school?.logo_url && <img src={school.logo_url} className="h-24 mx-auto mb-6" alt="logo"/>}
             <label className="bg-slate-50 p-8 rounded-3xl border-4 border-dashed block cursor-pointer">
@@ -434,6 +442,11 @@ const AdminDashboard = ({ profile, onLogout }) => {
                     }
                 }}/>
             </label>
+            <div className="mt-6 text-left p-4 bg-blue-50 rounded-2xl">
+              <p className="text-xs font-bold text-blue-400 uppercase mb-2">Reference Info</p>
+              <p className="text-sm font-bold text-blue-900">Total Classes: {classes.length}</p>
+              <p className="text-[10px] text-blue-700 mt-1">Class IDs are required for bulk subject/student assignment.</p>
+            </div>
           </div>
         ) : (
           <div className="bg-white rounded-3xl shadow-xl overflow-hidden border">
