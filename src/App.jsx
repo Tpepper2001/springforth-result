@@ -30,27 +30,22 @@ const pdfStyles = StyleSheet.create({
   schoolName: { fontSize: 20, fontWeight: 'bold', color: '#4338ca', marginBottom: 2 },
   subHeader: { fontSize: 8, color: '#64748b', marginBottom: 2 },
   reportBadge: { marginTop: 5, fontSize: 8, fontWeight: 'bold', color: '#4338ca' },
-  
   bioSection: { flexDirection: 'row', marginBottom: 20, gap: 10 },
   bioBox: { flex: 1, padding: 12, backgroundColor: '#f8fafc', borderRadius: 8, border: '0.5pt solid #e2e8f0' },
   bioRow: { flexDirection: 'row', marginBottom: 4 },
   label: { width: 70, color: '#64748b', fontSize: 7, textTransform: 'uppercase', fontWeight: 'bold' },
   value: { flex: 1, fontWeight: 'bold', fontSize: 9, color: '#1e293b' },
-
   table: { marginTop: 5, border: '0.5pt solid #e2e8f0', borderRadius: 4, overflow: 'hidden' },
   th: { backgroundColor: '#4338ca', color: '#ffffff', flexDirection: 'row', padding: 8, fontWeight: 'bold', fontSize: 8 },
   tr: { flexDirection: 'row', borderBottom: '0.5pt solid #e2e8f0', padding: 7, alignItems: 'center' },
   tdSubject: { flex: 3, fontWeight: 'bold' },
   td: { flex: 1, textAlign: 'center' },
-
   behaviorTitle: { fontSize: 8, fontWeight: 'bold', color: '#4338ca', marginTop: 20, marginBottom: 8, textTransform: 'uppercase' },
   behaviorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   behaviorItem: { width: '23%', padding: 6, backgroundColor: '#f8fafc', borderRadius: 4, border: '0.5pt solid #e2e8f0' },
-  
   remarksBox: { marginTop: 20, padding: 12, border: '0.5pt solid #e2e8f0', borderRadius: 8, backgroundColor: '#ffffff' },
   remarksHeader: { fontSize: 7, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', marginBottom: 4 },
   remarksText: { fontSize: 9, lineHeight: 1.4, color: '#334155' },
-
   footer: { marginTop: 'auto', flexDirection: 'row', justifyContent: 'space-between', paddingTop: 20 },
   sigLine: { borderTop: '0.5pt solid #334155', width: 140, textAlign: 'center', paddingTop: 5 },
   sigText: { fontSize: 7, color: '#64748b', textTransform: 'uppercase' },
@@ -138,7 +133,7 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
           <View style={pdfStyles.sigLine}><Text style={pdfStyles.sigText}>Principal</Text></View>
         </View>
         
-        {!isApproved && <Text style={pdfStyles.footnote}>* This document is a draft and is not officially approved by the school administration.</Text>}
+        {!isApproved && <Text style={pdfStyles.footnote}>* result not approved</Text>}
       </Page>
     </Document>
   );
@@ -184,23 +179,31 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   };
 
   const saveResults = async () => {
-    const ups = subjects.map(s => {
-      const sc = scores[s.id] || { ca: 0, exam: 0 };
-      return { student_id: selectedStudent.id, subject_id: s.id, scores: sc, total: (parseFloat(sc.ca)||0) + (parseFloat(sc.exam)||0) };
-    });
-    await supabase.from('results').delete().eq('student_id', selectedStudent.id);
-    await supabase.from('results').insert(ups);
-    
-    // Fix: Using student_id as conflict target to ensure behaviors/comments save correctly
-    await supabase.from('comments').upsert({ 
-      student_id: selectedStudent.id, 
-      school_id: school.id, 
-      tutor_comment: commentData.tutor_comment, 
-      behaviors: commentData.behaviors, 
-      submission_status: 'pending' 
-    }, { onConflict: 'student_id' });
-    
-    alert("Saved Successfully!"); selectStu(selectedStudent);
+    try {
+        const ups = subjects.map(s => {
+          const sc = scores[s.id] || { ca: 0, exam: 0 };
+          return { student_id: selectedStudent.id, subject_id: s.id, scores: sc, total: (parseFloat(sc.ca)||0) + (parseFloat(sc.exam)||0) };
+        });
+        await supabase.from('results').delete().eq('student_id', selectedStudent.id);
+        await supabase.from('results').insert(ups);
+        
+        // Fix for 409 Conflict: Ensure existing ID is included in payload if available
+        const commentPayload = { 
+          student_id: selectedStudent.id, 
+          school_id: school.id, 
+          tutor_comment: commentData.tutor_comment, 
+          behaviors: commentData.behaviors, 
+          submission_status: 'pending' 
+        };
+        if (commentData.id) commentPayload.id = commentData.id;
+
+        await supabase.from('comments').upsert(commentPayload);
+        
+        alert("Saved Successfully!"); 
+        selectStu(selectedStudent);
+    } catch (e) {
+        alert("Error saving: " + e.message);
+    }
   };
 
   return (
@@ -291,7 +294,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                                     </div>
                                 ))}
                             </div>
-                            <textarea className="w-full p-6 border-2 rounded-3xl h-40 outline-none focus:border-indigo-500 shadow-sm" placeholder="Form Tutor Remark..." value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
+                            <textarea className="w-full p-6 border-2 rounded-3xl h-40 outline-none focus:border-indigo-500 shadow-sm" placeholder="Form Tutor Observation Remark..." value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
                         </div>
                     )}
                 </div>
@@ -308,7 +311,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         <div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col p-4 backdrop-blur-md">
           <div className="bg-white p-4 flex justify-between rounded-t-3xl border-b shadow-xl">
             <button onClick={()=>setPreview(null)} className="text-red-500 font-black flex items-center gap-2"><X size={20}/> CLOSE PREVIEW</button>
-            <PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} />} fileName={`Transcript_${selectedStudent?.name}.pdf`} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-xs">Download Transcript</PDFDownloadLink>
+            <PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} />} fileName={`Transcript_${selectedStudent?.name}.pdf`} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-xs">Download Result</PDFDownloadLink>
           </div>
           <PDFViewer className="flex-1 rounded-b-3xl border-none"><ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} /></PDFViewer>
         </div>
@@ -359,7 +362,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
 
   const approve = async () => {
     await supabase.from('comments').update({ submission_status: 'approved', principal_comment: commentData.principal_comment }).eq('student_id', selectedStudent.id);
-    alert("Transcript Finalized!"); setSelectedStudent(null); load();
+    alert("Result Approved!"); setSelectedStudent(null); load();
   };
 
   return (
@@ -449,10 +452,10 @@ const CentralAdminDashboard = ({ onLogout }) => {
       </div>
       <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
         <table className="w-full text-left">
-          <thead className="bg-slate-50 border-b text-[10px] font-black uppercase"><tr><th className="p-4">Employee</th><th>Institution</th><th>Clearance</th><th>Actions</th></tr></thead>
+          <thead className="bg-slate-50 border-b text-[10px] font-black uppercase"><tr><th className="p-4">Employee</th><th>School</th><th>Clearance</th><th>Actions</th></tr></thead>
           <tbody>
             {users.map(u => (
-              <tr key={u.id} className="border-b hover:bg-slate-50 transition">
+              <tr key={u.id} className="border-b hover:bg-slate-50">
                 <td className="p-4 font-bold text-slate-700">{u.full_name}</td>
                 <td className="text-slate-500">{u.schools?.name || '---'}</td>
                 <td><span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase">{u.role}</span></td>
@@ -469,7 +472,7 @@ const CentralAdminDashboard = ({ onLogout }) => {
             <div className="space-y-4">
               <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Clearance Level</label>
               <select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.role} onChange={(e) => updateStaff(selectedUser.id, { role: e.target.value })}>
-                <option value="teacher">Teacher</option><option value="admin">Principal Admin</option>
+                <option value="teacher">Teacher</option><option value="admin">School Admin</option>
               </select>
               <label className="block text-xs font-bold text-slate-400 mb-1 uppercase"> Institutional Binding</label>
               <select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.school_id} onChange={(e) => updateStaff(selectedUser.id, { school_id: e.target.value })}>
