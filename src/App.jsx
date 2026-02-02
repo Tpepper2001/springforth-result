@@ -263,9 +263,16 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           <option value="">Select Class</option>
           {classList.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        {students.map(s => (
-          <div key={s.id} onClick={()=>selectStu(s)} className={`p-3 cursor-pointer rounded-xl mb-1 text-sm ${selectedStudent?.id === s.id ? 'bg-blue-600 shadow-lg' : 'hover:bg-white/5'}`}>{s.name}</div>
-        ))}
+        
+        <div className="flex items-center gap-2 mb-4 text-[10px] uppercase font-black text-slate-500">
+           <Users size={14}/> <span>Students ({students.length})</span>
+        </div>
+        
+        <div data-active-class={selectedClassId}>
+          {students.map(s => (
+            <div key={s.id} onClick={()=>selectStu(s)} className={`p-3 cursor-pointer rounded-xl mb-1 text-sm ${selectedStudent?.id === s.id ? 'bg-blue-600 shadow-lg' : 'hover:bg-white/5'}`}>{s.name}</div>
+          ))}
+        </div>
         <button onClick={onLogout} className="mt-auto flex items-center gap-3 text-red-400 font-bold p-3 hover:bg-red-400/10 rounded-xl w-full transition"><LogOut size={20}/> Logout</button>
       </div>
 
@@ -405,16 +412,19 @@ const AdminDashboard = ({ profile, onLogout }) => {
     <div className="flex h-screen bg-slate-50">
       <div className="w-64 bg-indigo-950 text-white p-6 flex flex-col">
         <h1 className="font-black text-xl mb-10 flex items-center gap-2 text-indigo-400"><Shield/> ADMIN</h1>
-        <button onClick={()=>setTab('review')} className={`p-4 text-left rounded-xl mb-2 font-bold ${tab==='review' ? 'bg-white/10' : ''}`}>Pending Results</button>
-        <button onClick={()=>setTab('classes')} className={`p-4 text-left rounded-xl mb-2 font-bold ${tab==='classes' ? 'bg-white/10' : ''}`}>Manage Classes</button>
-        <button onClick={()=>setTab('subjects')} className={`p-4 text-left rounded-xl mb-2 font-bold ${tab==='subjects' ? 'bg-white/10' : ''}`}>Manage Subjects</button>
-        <button onClick={()=>setTab('setup')} className={`p-4 text-left rounded-xl mb-2 font-bold ${tab==='setup' ? 'bg-white/10' : ''}`}>School Setup</button>
-        <button onClick={onLogout} className="mt-auto p-4 flex items-center gap-3 text-red-400 font-black"><LogOut/> Logout</button>
+        <button onClick={()=>setTab('review')} className={`flex items-center gap-3 p-4 text-left rounded-xl mb-2 font-bold transition ${tab==='review' ? 'bg-white/10' : 'hover:bg-white/5'}`}><CheckCircle size={20}/> Approvals</button>
+        <button onClick={()=>setTab('classes')} className={`flex items-center gap-3 p-4 text-left rounded-xl mb-2 font-bold transition ${tab==='classes' ? 'bg-white/10' : 'hover:bg-white/5'}`}><Users size={20}/> Classes</button>
+        <button onClick={()=>setTab('subjects')} className={`flex items-center gap-3 p-4 text-left rounded-xl mb-2 font-bold transition ${tab==='subjects' ? 'bg-white/10' : 'hover:bg-white/5'}`}><BookOpen size={20}/> Subjects</button>
+        <button onClick={()=>setTab('setup')} className={`flex items-center gap-3 p-4 text-left rounded-xl mb-2 font-bold transition ${tab==='setup' ? 'bg-white/10' : 'hover:bg-white/5'}`}><Upload size={20}/> Setup</button>
+        <button onClick={onLogout} className="mt-auto p-4 flex items-center gap-3 text-red-400 font-black hover:bg-red-400/10 rounded-xl transition"><LogOut size={20}/> Logout</button>
       </div>
 
       <div className="flex-1 p-10 overflow-auto">
         <div className="flex justify-between items-center mb-10">
-            <h2 className="text-3xl font-black capitalize">{tab} Management</h2>
+            <h2 className="text-3xl font-black capitalize flex items-center gap-3">
+              {tab === 'subjects' && <BookOpen className="text-indigo-600"/>}
+              {tab} Management
+            </h2>
             {tab === 'classes' && <button onClick={addClass} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2"><Plus/> Add Class</button>}
             {tab === 'subjects' && <button onClick={addSubject} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2"><Plus/> Add Subject</button>}
             {tab === 'review' && <button onClick={addStudent} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2"><Plus/> Add Student</button>}
@@ -546,11 +556,11 @@ const Auth = ({ onParent }) => {
               {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
-          <button className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl uppercase tracking-widest">
+          <button className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl uppercase tracking-widest transition hover:scale-[1.02]">
             {loading ? <Loader2 className="animate-spin mx-auto"/> : 'Enter Portal'}
           </button>
         </form>
-        <button onClick={onParent} className="w-full bg-slate-50 py-4 rounded-2xl mt-8 font-black uppercase text-slate-400 flex justify-center items-center gap-3"><Search size={18}/> Parent Portal</button>
+        <button onClick={onParent} className="w-full bg-slate-50 py-4 rounded-2xl mt-8 font-black uppercase text-slate-400 flex justify-center items-center gap-3 hover:bg-slate-100 transition"><Search size={18}/> Parent Portal</button>
       </div>
     </div>
   );
@@ -582,10 +592,10 @@ const ParentPortal = ({ onBack }) => {
         <GraduationCap size={80} className="mx-auto text-blue-600 mb-8 bg-blue-50 p-5 rounded-[30px]"/>
         <h2 className="text-3xl font-black mb-8">Parent Portal</h2>
         <input className="w-full border-2 p-5 rounded-3xl mb-4 text-center font-black tracking-widest outline-none focus:border-blue-600 text-lg uppercase" placeholder="ADM-XXXX" onChange={(e)=>setId(e.target.value)} />
-        <button onClick={lookup} className="w-full bg-blue-600 text-white py-5 rounded-3xl font-black uppercase tracking-widest shadow-xl">
+        <button onClick={lookup} className="w-full bg-blue-600 text-white py-5 rounded-3xl font-black uppercase tracking-widest shadow-xl transition active:scale-95">
             {loading ? <Loader2 className="animate-spin mx-auto"/> : 'View Result'}
         </button>
-        <button onClick={onBack} className="mt-8 text-slate-400 block w-full text-xs font-black uppercase">Back to Staff Login</button>
+        <button onClick={onBack} className="mt-8 text-slate-400 block w-full text-xs font-black uppercase hover:underline transition">Back to Staff Login</button>
       </div>
     </div>
   );
