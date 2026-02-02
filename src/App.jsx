@@ -189,7 +189,10 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
         {selectedClassId && (
           <div className="flex-1 overflow-y-auto">
-            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span>Students</span><button onClick={async ()=>{const n = prompt("Name:"); if(n) {await supabase.from('students').insert({name:n, class_id:selectedClassId, school_id:profile.school_id, admission_no:`ADM-${Math.floor(Math.random()*9999)}`}); loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
+            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400">
+              <span className="flex items-center gap-2"><Users size={12}/> Students</span>
+              <button onClick={async ()=>{const n = prompt("Name:"); if(n) {await supabase.from('students').insert({name:n, class_id:selectedClassId, school_id:profile.school_id, admission_no:`ADM-${Math.floor(Math.random()*9999)}`}); loadClass(selectedClassId);}}}><Plus size={14}/></button>
+            </div>
             <div className="space-y-1 mb-6">
               {students.map(s => (
                 <div key={s.id} className="flex items-center justify-between group">
@@ -340,8 +343,8 @@ const AdminDashboard = ({ profile, onLogout }) => {
               </div>
               <div className="space-y-4">
                 <label className="block"><span className="text-[10px] font-black uppercase text-slate-400 ml-1">Official Name</span><input className="w-full border-2 p-4 rounded-2xl mt-1 outline-none focus:border-indigo-500 font-bold" value={school.name || ''} onChange={(e)=>setSchool({...school, name: e.target.value})} /></label>
-                <label className="block"><span className="text-[10px] font-black uppercase text-slate-400 ml-1">Street Address</span><input className="w-full border-2 p-4 rounded-2xl mt-1 outline-none focus:border-indigo-500 font-bold" value={school.address || ''} onChange={(e)=>setSchool({...school, address: e.target.value})} /></label>
-                <label className="block"><span className="text-[10px] font-black uppercase text-slate-400 ml-1">Contact Line</span><input className="w-full border-2 p-4 rounded-2xl mt-1 outline-none focus:border-indigo-500 font-bold" value={school.contact_info || ''} onChange={(e)=>setSchool({...school, contact_info: e.target.value})} /></label>
+                <label className="block"><span className="text-[10px] font-black uppercase text-slate-400 ml-1 flex items-center gap-2"><MapPin size={12}/> Street Address</span><input className="w-full border-2 p-4 rounded-2xl mt-1 outline-none focus:border-indigo-500 font-bold" value={school.address || ''} onChange={(e)=>setSchool({...school, address: e.target.value})} /></label>
+                <label className="block"><span className="text-[10px] font-black uppercase text-slate-400 ml-1 flex items-center gap-2"><Phone size={12}/> Contact Line</span><input className="w-full border-2 p-4 rounded-2xl mt-1 outline-none focus:border-indigo-500 font-bold" value={school.contact_info || ''} onChange={(e)=>setSchool({...school, contact_info: e.target.value})} /></label>
               </div>
               <button onClick={updateProfile} className="w-full bg-indigo-600 text-white py-5 rounded-[25px] font-black shadow-xl shadow-indigo-100 uppercase tracking-widest hover:scale-[1.01] transition">Sync Identity Updates</button>
             </div>
