@@ -147,6 +147,7 @@ const CentralAdminDashboard = ({ onLogout }) => {
   const [users, setUsers] = useState([]);
   const [schools, setSchools] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const load = useCallback(async () => {
     const { data: p } = await supabase.from('profiles').select('*, schools(name)');
@@ -157,8 +158,21 @@ const CentralAdminDashboard = ({ onLogout }) => {
   useEffect(() => { load(); }, [load]);
 
   const updateStaff = async (uid, updates) => {
-    await supabase.from('profiles').update(updates).eq('id', uid);
-    alert("Staff Record Updated!"); load(); setSelectedUser(null);
+    setIsUpdating(true);
+    // Clean data: if school_id is empty string, set to null for Postgres UUID compatibility
+    const cleanUpdates = { ...updates };
+    if (cleanUpdates.school_id === "") cleanUpdates.school_id = null;
+
+    const { error } = await supabase.from('profiles').update(cleanUpdates).eq('id', uid);
+    
+    if (error) {
+      alert("Update Failed: " + error.message);
+    } else {
+      alert("Staff Record Updated Successfully!");
+      await load(); // Wait for fresh data
+      setSelectedUser(null);
+    }
+    setIsUpdating(false);
   };
 
   return (
@@ -189,6 +203,7 @@ const CentralAdminDashboard = ({ onLogout }) => {
           <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl">
             <h3 className="text-xl font-black mb-6">Manage Staff: {selectedUser.full_name}</h3>
             <div className="space-y-4">
+              {isUpdating && <div className="flex items-center gap-2 text-blue-600 font-bold text-xs"><Loader2 className="animate-spin" size={14}/> Saving changes...</div>}
               <div>
                 <label className="text-xs font-bold text-slate-400">ASSIGN ROLE</label>
                 <select className="w-full border-2 p-3 rounded-xl mt-1" defaultValue={selectedUser.role} onChange={(e) => updateStaff(selectedUser.id, { role: e.target.value })}>
@@ -197,7 +212,7 @@ const CentralAdminDashboard = ({ onLogout }) => {
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-400">TRANSFER SCHOOL</label>
-                <select className="w-full border-2 p-3 rounded-xl mt-1" defaultValue={selectedUser.school_id} onChange={(e) => updateStaff(selectedUser.id, { school_id: e.target.value })}>
+                <select className="w-full border-2 p-3 rounded-xl mt-1" defaultValue={selectedUser.school_id || ""} onChange={(e) => updateStaff(selectedUser.id, { school_id: e.target.value })}>
                   <option value="">Select School</option>
                   {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
@@ -583,7 +598,7 @@ const ParentPortal = ({ onBack }) => {
 
   return (
     <div className="min-h-screen bg-blue-50 flex items-center justify-center p-4">
-      <div className="bg-white p-12 rounded-[50px] shadow-2xl max-sm w-full text-center border">
+      <div className="bg-white p-12 rounded-[50px] shadow-2xl max-w-sm w-full text-center border">
         <Search size={80} className="mx-auto text-blue-600 mb-8 bg-blue-50 p-5 rounded-[30px]"/>
         <h2 className="text-3xl font-black mb-3">Parent Portal</h2>
         <p className="text-xs text-slate-400 font-bold uppercase mb-8 tracking-widest">Enter Student Admission ID</p>
