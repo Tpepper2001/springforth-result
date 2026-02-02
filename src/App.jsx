@@ -347,7 +347,6 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [tab, setTab] = useState('review');
   const [dataList, setDataList] = useState([]);
   const [classes, setClasses] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [commentData, setCommentData] = useState({});
@@ -391,7 +390,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
   };
 
   const deleteItem = async (table, id) => {
-    if(confirm("Are you sure?")) { await supabase.from(table).delete().eq('id', id); loadAll(); }
+    if(window.confirm("Are you sure?")) { await supabase.from(table).delete().eq('id', id); loadAll(); }
   };
 
   const approveResult = async () => {
@@ -420,7 +419,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
 
         {tab === 'setup' ? (
           <div className="bg-white p-12 rounded-[40px] shadow-xl text-center max-w-md mx-auto">
-            {school?.logo_url && <img src={school.logo_url} className="h-24 mx-auto mb-6"/>}
+            {school?.logo_url && <img src={school.logo_url} className="h-24 mx-auto mb-6" alt="logo"/>}
             <label className="bg-slate-50 p-8 rounded-3xl border-4 border-dashed block cursor-pointer">
                 <Upload className="mx-auto mb-2 text-slate-400"/>
                 <span className="font-black text-slate-500 uppercase text-xs">Upload School Logo</span>
