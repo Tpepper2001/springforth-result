@@ -1,5 +1,3 @@
---- START OF FILE Paste February 02, 2026 - 6:45PM ---
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink, Image } from '@react-pdf/renderer';
