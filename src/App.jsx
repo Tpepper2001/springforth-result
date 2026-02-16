@@ -155,7 +155,8 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [side, setSide] = useState(false);
 
   const init = useCallback(async () => {
-    const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
+    if (!profile?.school_id) return;
+    const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).maybeSingle();
     const { data: c } = await supabase.from('classes').select('*').eq('school_id', profile.school_id);
     setSchool(s); setClassList(c || []);
   }, [profile.school_id]);
@@ -206,13 +207,22 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     <div className="flex h-screen bg-slate-50">
       <div className={`fixed lg:static inset-y-0 left-0 w-72 bg-indigo-950 text-white p-6 transition-transform z-40 ${side ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="flex justify-between items-center mb-8"><h1 className="text-xl font-black text-indigo-300 flex items-center gap-2"><School/> TEACHER</h1><button onClick={()=>setSide(false)} className="lg:hidden"><X/></button></div>
-        <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span>Classes</span><button onClick={async ()=>{const n = prompt("Class Name:"); if(n) {await supabase.from('classes').insert([{name:n, school_id:profile.school_id}]); await init();}}}><Plus size={14}/></button></div>
+        <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span>Classes</span>
+          <button onClick={async ()=>{
+            const n = prompt("Class Name:"); 
+            if(n) {
+              const { error } = await supabase.from('classes').insert([{name:n, school_id:profile.school_id}]);
+              if(error) alert("Error adding class: " + error.message);
+              else await init();
+            }
+          }}><Plus size={14}/></button>
+        </div>
         <div className="space-y-1 mb-8">{classList.map(c => (<div key={c.id} className="flex items-center justify-between group"><button onClick={()=>loadClass(c.id)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedClassId === c.id ? 'bg-indigo-600' : 'hover:bg-white/5'}`}>{c.name}</button><button onClick={async ()=>{if(window.confirm("Delete Class?")){await supabase.from('classes').delete().eq('id', c.id); await init();}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}</div>
         {selectedClassId && (
           <div className="flex-1 overflow-y-auto">
-            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><Users size={12} className="inline mr-1"/> Students</span><button onClick={async ()=>{const n = prompt("Name:"); if(n) {await supabase.from('students').insert([{name:n, class_id:selectedClassId, school_id:profile.school_id, admission_no:`ADM-${Math.floor(Math.random()*9999)}`}]); await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
+            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><Users size={12} className="inline mr-1"/> Students</span><button onClick={async ()=>{const n = prompt("Name:"); if(n) { const { error } = await supabase.from('students').insert([{name:n, class_id:selectedClassId, school_id:profile.school_id, admission_no:`ADM-${Math.floor(Math.random()*9999)}`}]); if(error) alert(error.message); else await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
             <div className="space-y-1 mb-6">{students.map(s => (<div key={s.id} className="flex items-center justify-between group"><button onClick={()=>selectStu(s)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedStudent?.id === s.id ? 'bg-indigo-500' : 'hover:bg-white/5'}`}>{s.name}</button><button onClick={async ()=>{if(window.confirm("Delete Student?")){await supabase.from('students').delete().eq('id', s.id); await loadClass(selectedClassId);}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}</div>
-            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><BookOpen size={12} className="inline mr-1"/> Subjects</span><button onClick={async ()=>{const n = prompt("Subject Name:"); if(n) {await supabase.from('subjects').insert([{name:n, class_id:selectedClassId}]); await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
+            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><BookOpen size={12} className="inline mr-1"/> Subjects</span><button onClick={async ()=>{const n = prompt("Subject Name:"); if(n) { const { error } = await supabase.from('subjects').insert([{name:n, class_id:selectedClassId}]); if(error) alert(error.message); else await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
             <div className="space-y-1">{subjects.map(sub => (<div key={sub.id} className="flex items-center justify-between group p-2 rounded-lg hover:bg-white/5 text-sm"><span>{sub.name}</span><button onClick={async ()=>{if(window.confirm("Delete Subject?")){await supabase.from('subjects').delete().eq('id', sub.id); await loadClass(selectedClassId);}}} className="opacity-0 group-hover:opacity-100 text-red-400"><Trash2 size={14}/></button></div>))}</div>
           </div>
         )}
@@ -274,13 +284,11 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [commentData, setCommentData] = useState({});
   const [loading, setLoading] = useState(false);
 
-  // load now handles refreshing specific student data if one is selected
   const load = useCallback(async () => {
     const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
     const { data: st } = await supabase.from('students').select('*, classes(name)').eq('school_id', profile.school_id);
     setSchool(s || {}); setStudents(st || []);
 
-    // Real-time enhancement: If a student is currently being reviewed, refresh their specific data
     if (selectedStudent) {
       const { data: co } = await supabase.from('comments').select('*').eq('student_id', selectedStudent.id).maybeSingle();
       setCommentData(co || {});
@@ -398,7 +406,7 @@ const CentralAdminDashboard = ({ onLogout }) => {
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="flex justify-between items-center bg-slate-900 text-white p-6 rounded-2xl mb-8 shadow-xl"><h1 className="text-2xl font-black flex items-center gap-3"><Shield className="text-indigo-400"/> GLOBAL CORE</h1><button onClick={onLogout} className="bg-white/10 px-6 py-2 rounded-xl font-bold">Logout</button></div>
       <div className="bg-white rounded-2xl shadow-sm border overflow-hidden"><table className="w-full text-left"><thead className="bg-slate-50 border-b text-[10px] font-black uppercase"><tr><th className="p-4">Employee</th><th>School</th><th>Clearance</th><th>Actions</th></tr></thead><tbody>{users.map(u => (<tr key={u.id} className="border-b hover:bg-slate-50"><td className="p-4 font-bold text-slate-700">{u.full_name}</td><td className="text-slate-500">{u.schools?.name || '---'}</td><td><span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase">{u.role}</span></td><td><button onClick={() => setSelectedUser(u)} className="p-2 text-indigo-600"><UserCog size={18}/></button></td></tr>))}</tbody></table></div>
-      {selectedUser && (<div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-3xl w-full max-w-sm"><h3 className="text-lg font-black mb-6 uppercase text-center tracking-widest">Update Privileges</h3><div className="space-y-4"><label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Role</label><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.role} onChange={(e) => updateStaff(selectedUser.id, { role: e.target.value })}><option value="teacher">Teacher</option><option value="admin">School Admin</option></select><label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Institutional Assignment</label><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.school_id} onChange={(e) => updateStaff(selectedUser.id, { school_id: e.target.value })}><option value="">Detached</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select><button onClick={() => setSelectedUser(null)} className="w-full py-4 text-slate-400 font-bold uppercase text-xs">Dismiss</button></div></div></div>)}
+      {selectedUser && (<div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-3xl w-full max-sm"><h3 className="text-lg font-black mb-6 uppercase text-center tracking-widest">Update Privileges</h3><div className="space-y-4"><label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Role</label><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.role} onChange={(e) => updateStaff(selectedUser.id, { role: e.target.value })}><option value="teacher">Teacher</option><option value="admin">School Admin</option></select><label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Institutional Assignment</label><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.school_id} onChange={(e) => updateStaff(selectedUser.id, { school_id: e.target.value })}><option value="">Detached</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select><button onClick={() => setSelectedUser(null)} className="w-full py-4 text-slate-400 font-bold uppercase text-xs">Dismiss</button></div></div></div>)}
     </div>
   );
 };
