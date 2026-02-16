@@ -155,9 +155,17 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [side, setSide] = useState(false);
 
   const init = useCallback(async () => {
-    if (!profile?.school_id) return;
-    const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).maybeSingle();
-    const { data: c } = await supabase.from('classes').select('*').eq('school_id', profile.school_id).order('name');
+    // FALLBACK: If teacher profile is not linked, fetch the first school found
+    let schoolId = profile?.school_id;
+    if (!schoolId) {
+      const { data: fallbackSchools } = await supabase.from('schools').select('id').limit(1);
+      if (fallbackSchools && fallbackSchools.length > 0) schoolId = fallbackSchools[0].id;
+    }
+
+    if (!schoolId) return;
+
+    const { data: s } = await supabase.from('schools').select('*').eq('id', schoolId).maybeSingle();
+    const { data: c } = await supabase.from('classes').select('*').eq('school_id', schoolId).order('name');
     setSchool(s); setClassList(c || []);
   }, [profile.school_id]);
 
@@ -213,26 +221,22 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           <button onClick={async ()=>{
             const n = prompt("Enter Class Name:"); 
             if(!n) return;
-            if(!profile?.school_id) { alert("Error: No School ID associated with your account."); return; }
+            const targetId = profile?.school_id || school?.id;
+            if(!targetId) { alert("Error: System cannot identify the school."); return; }
             
-            const { error } = await supabase.from('classes').insert({ name: n, school_id: profile.school_id });
-            if(error) {
-               alert("Database Error: " + error.message);
-            } else {
-               alert("Class added successfully!");
-               await init();
-            }
+            const { error } = await supabase.from('classes').insert({ name: n, school_id: targetId });
+            if(error) alert("Error: " + error.message);
+            else await init();
           }}><Plus size={14}/></button>
         </div>
 
         <div className="space-y-1 mb-8">
-            {classList.length === 0 && <p className="text-[10px] text-indigo-400/50 italic px-2">No classes found</p>}
             {classList.map(c => (<div key={c.id} className="flex items-center justify-between group"><button onClick={()=>loadClass(c.id)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedClassId === c.id ? 'bg-indigo-600' : 'hover:bg-white/5'}`}>{c.name}</button><button onClick={async ()=>{if(window.confirm("Delete Class?")){await supabase.from('classes').delete().eq('id', c.id); await init();}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}
         </div>
 
         {selectedClassId && (
           <div className="flex-1 overflow-y-auto">
-            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><Users size={12} className="inline mr-1"/> Students</span><button onClick={async ()=>{const n = prompt("Name:"); if(n) { const { error } = await supabase.from('students').insert([{name:n, class_id:selectedClassId, school_id:profile.school_id, admission_no:`ADM-${Math.floor(Math.random()*9999)}`}]); if(error) alert(error.message); else await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
+            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><Users size={12} className="inline mr-1"/> Students</span><button onClick={async ()=>{const n = prompt("Name:"); if(n) { const targetId = profile?.school_id || school?.id; const { error } = await supabase.from('students').insert([{name:n, class_id:selectedClassId, school_id: targetId, admission_no:`ADM-${Math.floor(Math.random()*9999)}`}]); if(error) alert(error.message); else await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
             <div className="space-y-1 mb-6">{students.map(s => (<div key={s.id} className="flex items-center justify-between group"><button onClick={()=>selectStu(s)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedStudent?.id === s.id ? 'bg-indigo-500' : 'hover:bg-white/5'}`}>{s.name}</button><button onClick={async ()=>{if(window.confirm("Delete Student?")){await supabase.from('students').delete().eq('id', s.id); await loadClass(selectedClassId);}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}</div>
             <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><BookOpen size={12} className="inline mr-1"/> Subjects</span><button onClick={async ()=>{const n = prompt("Subject Name:"); if(n) { const { error } = await supabase.from('subjects').insert([{name:n, class_id:selectedClassId}]); if(error) alert(error.message); else await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
             <div className="space-y-1">{subjects.map(sub => (<div key={sub.id} className="flex items-center justify-between group p-2 rounded-lg hover:bg-white/5 text-sm"><span>{sub.name}</span><button onClick={async ()=>{if(window.confirm("Delete Subject?")){await supabase.from('subjects').delete().eq('id', sub.id); await loadClass(selectedClassId);}}} className="opacity-0 group-hover:opacity-100 text-red-400"><Trash2 size={14}/></button></div>))}</div>
@@ -243,6 +247,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <div className="p-6 bg-white border-b flex items-center gap-4">
           <button onClick={()=>setSide(true)} className="lg:hidden"><Menu/></button>
+          <div className="flex-1 text-indigo-900 font-bold uppercase tracking-widest text-sm">{school?.name || "Loading Institution..."}</div>
           <div className="flex-1"><h2 className="text-xl font-black text-slate-800 uppercase">{selectedStudent?.name || "Academic Entry"}</h2></div>
           {selectedStudent && (
             <div className="flex gap-2">
@@ -331,7 +336,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
         const { data: { publicUrl } } = supabase.storage.from('school-logos').getPublicUrl(data.path);
         await supabase.from('schools').update({ logo_url: publicUrl }).eq('id', school.id);
         await load();
-    } catch (e) { alert("Logo upload failed. Ensure 'school-logos' bucket is Public in Supabase Storage. Error: " + e.message); }
+    } catch (e) { alert("Logo upload failed. Error: " + e.message); }
     setLoading(false);
   };
 
@@ -430,7 +435,13 @@ const Auth = ({ onParent }) => {
   const [loading, setLoading] = useState(false);
   const [schools, setSchools] = useState([]);
 
-  useEffect(() => { supabase.from('schools').select('id, name').then(({data}) => setSchools(data || [])); }, []);
+  useEffect(() => { 
+    supabase.from('schools').select('id, name').then(({data}) => {
+      setSchools(data || []);
+      // Auto-select the first school if it exists
+      if(data && data.length > 0) setForm(prev => ({...prev, schoolId: data[0].id}));
+    }); 
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault(); setLoading(true);
@@ -442,7 +453,7 @@ const Auth = ({ onParent }) => {
           const { data: s } = await supabase.from('schools').insert([{ owner_id: user.id, name: form.name }]).select().single();
           await supabase.from('profiles').insert([{ id: user.id, full_name: form.name, role: 'admin', school_id: s.id }]);
         } else { await supabase.from('profiles').insert([{ id: user.id, full_name: form.name, role: 'teacher', school_id: form.schoolId }]); }
-        alert("Verification required.");
+        alert("Verification email sent (check spam). Once verified, you can log in.");
       }
     } catch (err) { alert(err.message); }
     setLoading(false);
@@ -457,7 +468,7 @@ const Auth = ({ onParent }) => {
           {mode !== 'login' && <input className="w-full border-2 p-4 rounded-3xl outline-none focus:border-indigo-500" placeholder="Full Name" onChange={(e)=>setForm({...form, name: e.target.value})} required />}
           <input className="w-full border-2 p-4 rounded-3xl outline-none focus:border-indigo-500" type="email" placeholder="Email" onChange={(e)=>setForm({...form, email: e.target.value})} required />
           <input className="w-full border-2 p-4 rounded-3xl outline-none focus:border-indigo-500" type="password" placeholder="Password" onChange={(e)=>setForm({...form, password: e.target.value})} required />
-          {mode === 'teacher_reg' && (<select className="w-full border-2 p-4 rounded-3xl bg-white font-bold" onChange={(e)=>setForm({...form, schoolId: e.target.value})} required><option value="">Select School</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>)}
+          {mode === 'teacher_reg' && (<select className="w-full border-2 p-4 rounded-3xl bg-white font-bold" value={form.schoolId} onChange={(e)=>setForm({...form, schoolId: e.target.value})} required><option value="">Select School</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>)}
           <button className="w-full bg-indigo-600 text-white py-4 rounded-3xl font-black shadow-lg shadow-indigo-100 transition active:scale-95 uppercase text-xs tracking-widest">{loading ? <Loader2 className="animate-spin mx-auto"/> : 'Enter Portal'}</button>
         </form>
         <button onClick={onParent} className="w-full bg-slate-50 py-4 rounded-3xl mt-8 font-black uppercase text-slate-400 flex justify-center items-center gap-3"><Search size={18}/> Parent Gateway</button>
