@@ -157,7 +157,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const init = useCallback(async () => {
     if (!profile?.school_id) return;
     const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).maybeSingle();
-    const { data: c } = await supabase.from('classes').select('*').eq('school_id', profile.school_id);
+    const { data: c } = await supabase.from('classes').select('*').eq('school_id', profile.school_id).order('name');
     setSchool(s); setClassList(c || []);
   }, [profile.school_id]);
 
@@ -207,17 +207,29 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     <div className="flex h-screen bg-slate-50">
       <div className={`fixed lg:static inset-y-0 left-0 w-72 bg-indigo-950 text-white p-6 transition-transform z-40 ${side ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="flex justify-between items-center mb-8"><h1 className="text-xl font-black text-indigo-300 flex items-center gap-2"><School/> TEACHER</h1><button onClick={()=>setSide(false)} className="lg:hidden"><X/></button></div>
-        <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span>Classes</span>
+        
+        <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400">
+          <span>Classes</span>
           <button onClick={async ()=>{
-            const n = prompt("Class Name:"); 
-            if(n) {
-              const { error } = await supabase.from('classes').insert([{name:n, school_id:profile.school_id}]);
-              if(error) alert("Error adding class: " + error.message);
-              else await init();
+            const n = prompt("Enter Class Name:"); 
+            if(!n) return;
+            if(!profile?.school_id) { alert("Error: No School ID associated with your account."); return; }
+            
+            const { error } = await supabase.from('classes').insert({ name: n, school_id: profile.school_id });
+            if(error) {
+               alert("Database Error: " + error.message);
+            } else {
+               alert("Class added successfully!");
+               await init();
             }
           }}><Plus size={14}/></button>
         </div>
-        <div className="space-y-1 mb-8">{classList.map(c => (<div key={c.id} className="flex items-center justify-between group"><button onClick={()=>loadClass(c.id)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedClassId === c.id ? 'bg-indigo-600' : 'hover:bg-white/5'}`}>{c.name}</button><button onClick={async ()=>{if(window.confirm("Delete Class?")){await supabase.from('classes').delete().eq('id', c.id); await init();}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}</div>
+
+        <div className="space-y-1 mb-8">
+            {classList.length === 0 && <p className="text-[10px] text-indigo-400/50 italic px-2">No classes found</p>}
+            {classList.map(c => (<div key={c.id} className="flex items-center justify-between group"><button onClick={()=>loadClass(c.id)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedClassId === c.id ? 'bg-indigo-600' : 'hover:bg-white/5'}`}>{c.name}</button><button onClick={async ()=>{if(window.confirm("Delete Class?")){await supabase.from('classes').delete().eq('id', c.id); await init();}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}
+        </div>
+
         {selectedClassId && (
           <div className="flex-1 overflow-y-auto">
             <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><Users size={12} className="inline mr-1"/> Students</span><button onClick={async ()=>{const n = prompt("Name:"); if(n) { const { error } = await supabase.from('students').insert([{name:n, class_id:selectedClassId, school_id:profile.school_id, admission_no:`ADM-${Math.floor(Math.random()*9999)}`}]); if(error) alert(error.message); else await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
