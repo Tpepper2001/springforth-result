@@ -206,14 +206,14 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     <div className="flex h-screen bg-slate-50">
       <div className={`fixed lg:static inset-y-0 left-0 w-72 bg-indigo-950 text-white p-6 transition-transform z-40 ${side ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="flex justify-between items-center mb-8"><h1 className="text-xl font-black text-indigo-300 flex items-center gap-2"><School/> TEACHER</h1><button onClick={()=>setSide(false)} className="lg:hidden"><X/></button></div>
-        <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span>Classes</span><button onClick={async ()=>{const n = prompt("Class Name:"); if(n) {await supabase.from('classes').insert({name:n, school_id:profile.school_id}); init();}}}><Plus size={14}/></button></div>
-        <div className="space-y-1 mb-8">{classList.map(c => (<div key={c.id} className="flex items-center justify-between group"><button onClick={()=>loadClass(c.id)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedClassId === c.id ? 'bg-indigo-600' : 'hover:bg-white/5'}`}>{c.name}</button><button onClick={async ()=>{if(window.confirm("Delete Class?")){await supabase.from('classes').delete().eq('id', c.id); init();}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}</div>
+        <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span>Classes</span><button onClick={async ()=>{const n = prompt("Class Name:"); if(n) {await supabase.from('classes').insert([{name:n, school_id:profile.school_id}]); await init();}}}><Plus size={14}/></button></div>
+        <div className="space-y-1 mb-8">{classList.map(c => (<div key={c.id} className="flex items-center justify-between group"><button onClick={()=>loadClass(c.id)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedClassId === c.id ? 'bg-indigo-600' : 'hover:bg-white/5'}`}>{c.name}</button><button onClick={async ()=>{if(window.confirm("Delete Class?")){await supabase.from('classes').delete().eq('id', c.id); await init();}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}</div>
         {selectedClassId && (
           <div className="flex-1 overflow-y-auto">
-            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><Users size={12} className="inline mr-1"/> Students</span><button onClick={async ()=>{const n = prompt("Name:"); if(n) {await supabase.from('students').insert({name:n, class_id:selectedClassId, school_id:profile.school_id, admission_no:`ADM-${Math.floor(Math.random()*9999)}`}); loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
-            <div className="space-y-1 mb-6">{students.map(s => (<div key={s.id} className="flex items-center justify-between group"><button onClick={()=>selectStu(s)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedStudent?.id === s.id ? 'bg-indigo-500' : 'hover:bg-white/5'}`}>{s.name}</button><button onClick={async ()=>{if(window.confirm("Delete Student?")){await supabase.from('students').delete().eq('id', s.id); loadClass(selectedClassId);}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}</div>
-            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><BookOpen size={12} className="inline mr-1"/> Subjects</span><button onClick={async ()=>{const n = prompt("Subject Name:"); if(n) {await supabase.from('subjects').insert({name:n, class_id:selectedClassId}); loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
-            <div className="space-y-1">{subjects.map(sub => (<div key={sub.id} className="flex items-center justify-between group p-2 rounded-lg hover:bg-white/5 text-sm"><span>{sub.name}</span><button onClick={async ()=>{if(window.confirm("Delete Subject?")){await supabase.from('subjects').delete().eq('id', sub.id); loadClass(selectedClassId);}}} className="opacity-0 group-hover:opacity-100 text-red-400"><Trash2 size={14}/></button></div>))}</div>
+            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><Users size={12} className="inline mr-1"/> Students</span><button onClick={async ()=>{const n = prompt("Name:"); if(n) {await supabase.from('students').insert([{name:n, class_id:selectedClassId, school_id:profile.school_id, admission_no:`ADM-${Math.floor(Math.random()*9999)}`}]); await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
+            <div className="space-y-1 mb-6">{students.map(s => (<div key={s.id} className="flex items-center justify-between group"><button onClick={()=>selectStu(s)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedStudent?.id === s.id ? 'bg-indigo-500' : 'hover:bg-white/5'}`}>{s.name}</button><button onClick={async ()=>{if(window.confirm("Delete Student?")){await supabase.from('students').delete().eq('id', s.id); await loadClass(selectedClassId);}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}</div>
+            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><BookOpen size={12} className="inline mr-1"/> Subjects</span><button onClick={async ()=>{const n = prompt("Subject Name:"); if(n) {await supabase.from('subjects').insert([{name:n, class_id:selectedClassId}]); await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
+            <div className="space-y-1">{subjects.map(sub => (<div key={sub.id} className="flex items-center justify-between group p-2 rounded-lg hover:bg-white/5 text-sm"><span>{sub.name}</span><button onClick={async ()=>{if(window.confirm("Delete Subject?")){await supabase.from('subjects').delete().eq('id', sub.id); await loadClass(selectedClassId);}}} className="opacity-0 group-hover:opacity-100 text-red-400"><Trash2 size={14}/></button></div>))}</div>
           </div>
         )}
         <button onClick={onLogout} className="mt-8 flex items-center gap-3 text-red-400 font-bold p-3 hover:bg-red-400/10 rounded-xl w-full transition"><LogOut size={20}/> Logout</button>
@@ -310,14 +310,14 @@ const AdminDashboard = ({ profile, onLogout }) => {
         if(error) throw error;
         const { data: { publicUrl } } = supabase.storage.from('school-logos').getPublicUrl(data.path);
         await supabase.from('schools').update({ logo_url: publicUrl }).eq('id', school.id);
-        load();
+        await load();
     } catch (e) { alert("Logo upload failed. Ensure 'school-logos' bucket is Public in Supabase Storage. Error: " + e.message); }
     setLoading(false);
   };
 
   const approve = async () => {
     await supabase.from('comments').update({ submission_status: 'approved', principal_comment: commentData.principal_comment }).eq('student_id', selectedStudent.id);
-    alert("Result Approved!"); setSelectedStudent(null); load();
+    alert("Result Approved!"); setSelectedStudent(null); await load();
   };
 
   return (
@@ -390,7 +390,7 @@ const CentralAdminDashboard = ({ onLogout }) => {
     try {
       const { error } = await supabase.from('profiles').update(updates).eq('id', uid);
       if (error) throw error;
-      alert("Updated!"); load(); setSelectedUser(null);
+      alert("Updated!"); await load(); setSelectedUser(null);
     } catch (err) { alert(err.message); }
   };
 
@@ -419,9 +419,9 @@ const Auth = ({ onParent }) => {
       else {
         const { data: { user } } = await supabase.auth.signUp({ email: form.email, password: form.password });
         if (mode === 'school_reg') {
-          const { data: s } = await supabase.from('schools').insert({ owner_id: user.id, name: form.name }).select().single();
-          await supabase.from('profiles').insert({ id: user.id, full_name: form.name, role: 'admin', school_id: s.id });
-        } else { await supabase.from('profiles').insert({ id: user.id, full_name: form.name, role: 'teacher', school_id: form.schoolId }); }
+          const { data: s } = await supabase.from('schools').insert([{ owner_id: user.id, name: form.name }]).select().single();
+          await supabase.from('profiles').insert([{ id: user.id, full_name: form.name, role: 'admin', school_id: s.id }]);
+        } else { await supabase.from('profiles').insert([{ id: user.id, full_name: form.name, role: 'teacher', school_id: form.schoolId }]); }
         alert("Verification required.");
       }
     } catch (err) { alert(err.message); }
