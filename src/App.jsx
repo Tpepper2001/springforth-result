@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink, Image, pdf } from '@react-pdf/renderer';
-import { Loader2, School, LogOut, Users, CheckCircle, Search, Menu, X, Upload, Shield, UserCog, Plus, BookOpen, Trash2, GraduationCap, MapPin, Phone, Archive } from 'lucide-react';
+import { Loader2, School, LogOut, Users, CheckCircle, Search, Menu, X, Upload, Shield, UserCog, Plus, BookOpen, Trash2, GraduationCap, Archive } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
