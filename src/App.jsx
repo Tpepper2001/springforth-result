@@ -14,7 +14,7 @@ const BEHAVIORS = ['RESPECT', 'RESPONSIBILITY', 'EMPATHY', 'SELF DISCIPLINE', 'C
 const RATINGS = ['5', '4', '3', '2', '1'];
 const CENTRAL_ADMIN_EMAIL = 'admin@admin.com';
 
-// ==================== GRADING LOGIC ====================
+// ==================== GRADING & REMARK LOGIC ====================
 const getGrade = (score, max) => {
   const percent = (score / max) * 100;
   if (percent >= 80) return { g: 'A', r: 'Excellent' };
@@ -22,6 +22,15 @@ const getGrade = (score, max) => {
   if (percent >= 60) return { g: 'C', r: 'Good' };
   if (percent >= 50) return { g: 'P', r: 'Pass' };
   return { g: 'F', r: 'Needs Improvement' };
+};
+
+const getPrincipalRemark = (avg) => {
+    const score = parseFloat(avg);
+    if (score >= 80) return "An excellent result. You have demonstrated exceptional academic consistency.";
+    if (score >= 70) return "A very good performance. Maintain this standard of excellence.";
+    if (score >= 60) return "A good result. With a bit more focus in your weak areas, you can reach the top.";
+    if (score >= 50) return "A fair performance, however, there is significant room for improvement.";
+    return "Poor performance. You are advised to double your effort and seek academic counseling.";
 };
 
 // ==================== PDF STYLES ====================
@@ -61,6 +70,9 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
   const possible = (results?.length || 0) * (isMid ? 40 : 100);
   const avg = results?.length > 0 ? ((totalScore / possible) * 100).toFixed(1) : 0;
   const isApproved = comments?.submission_status === 'approved';
+
+  // Automatic Principal Logic
+  const principalRemark = comments?.principal_comment || (isApproved ? getPrincipalRemark(avg) : '---');
 
   return (
     <Document>
@@ -128,7 +140,7 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
 
         <View style={pdfStyles.remarksBox}>
           <Text style={pdfStyles.remarksHeader}>Principal's Remark</Text>
-          <Text style={pdfStyles.remarksText}>{comments?.principal_comment || (isApproved ? 'Approved' : '---')}</Text>
+          <Text style={pdfStyles.remarksText}>{principalRemark}</Text>
         </View>
 
         <View style={pdfStyles.footer}>
@@ -212,21 +224,30 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     } catch (e) { alert("Error saving: " + e.message); }
   };
 
-  const downloadAllMidtermsAsZip = async () => {
-    if (!selectedClassId || students.length === 0) return;
+  // UPDATED ZIP LOGIC: DOWNLOADS WHOLE SCHOOL ORGANIZED BY CLASS
+  const downloadWholeSchoolMidterms = async () => {
+    if (!school?.id) return;
     setIsZipping(true);
     try {
       const zip = new JSZip();
-      const currentClassName = classList.find(c => c.id === selectedClassId)?.name || 'Class';
+      
+      // 1. Fetch all students for the whole school
+      const { data: allStudents } = await supabase
+        .from('students')
+        .select('*, classes(name)')
+        .eq('school_id', school.id);
 
-      // Fetch ALL results and comments for this class's students
-      const { data: allResults } = await supabase.from('results').select('*, subjects(*)').in('student_id', students.map(s => s.id));
-      const { data: allComments } = await supabase.from('comments').select('*').in('student_id', students.map(s => s.id));
+      // 2. Fetch all relevant results and comments in bulk
+      const studentIds = allStudents.map(s => s.id);
+      const { data: allResults } = await supabase.from('results').select('*, subjects(*)').in('student_id', studentIds);
+      const { data: allComments } = await supabase.from('comments').select('*').in('student_id', studentIds);
 
-      for (const student of students) {
+      // 3. Process each student
+      for (const student of allStudents) {
         const studentResults = allResults.filter(r => r.student_id === student.id);
         const studentComments = allComments.find(c => c.student_id === student.id) || { behaviors: {} };
-        
+        const className = student.classes?.name || 'Unassigned';
+
         const blob = await pdf(
           <ResultPDF 
             school={school} 
@@ -237,13 +258,14 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           />
         ).toBlob();
         
-        zip.file(`${student.name.replace(/\s+/g, '_')}_MidTerm.pdf`, blob);
+        // Add to class folder in ZIP
+        zip.folder(className).file(`${student.name.replace(/\s+/g, '_')}_MidTerm.pdf`, blob);
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `${currentClassName}_MidTerm_Results.zip`);
+      saveAs(content, `${school.name.replace(/\s+/g, '_')}_Full_School_MidTerms.zip`);
     } catch (err) {
-      alert("Error: " + err.message);
+      alert("Bulk Export Error: " + err.message);
     } finally {
       setIsZipping(false);
     }
@@ -285,16 +307,14 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           <button onClick={()=>setSide(true)} className="lg:hidden"><Menu/></button>
           <div className="flex-1 text-indigo-900 font-bold uppercase tracking-widest text-sm">{school?.name || "Loading Institution..."}</div>
           
-          {selectedClassId && !selectedStudent && (
-             <button 
-               onClick={downloadAllMidtermsAsZip} 
-               disabled={isZipping}
-               className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter flex items-center gap-2"
-             >
-               {isZipping ? <Loader2 className="animate-spin" size={14}/> : <Archive size={14}/>}
-               {isZipping ? 'Generating ZIP...' : 'Download All Mid-term (ZIP)'}
-             </button>
-          )}
+          <button 
+             onClick={downloadWholeSchoolMidterms} 
+             disabled={isZipping}
+             className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter flex items-center gap-2"
+           >
+             {isZipping ? <Loader2 className="animate-spin" size={14}/> : <Archive size={14}/>}
+             {isZipping ? 'Generating (Whole School)...' : 'Download All Classes (ZIP)'}
+          </button>
 
           {selectedStudent && (
             <div className="flex gap-2">
@@ -351,7 +371,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const load = useCallback(async () => {
     const { data: s } = await supabase.from('schools').select('*').eq('id', profile.school_id).single();
     const { data: st } = await supabase.from('students').select('*, classes(name)').eq('school_id', profile.school_id);
-    setSchool(s || {}); setStudents(st || []);
+    setStudents(st || []); setSchool(s || {});
   }, [profile.school_id]);
 
   useEffect(() => { load(); }, [load]);
