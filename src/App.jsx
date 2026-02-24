@@ -14,7 +14,7 @@ const BEHAVIORS = ['RESPECT', 'RESPONSIBILITY', 'EMPATHY', 'SELF DISCIPLINE', 'C
 const RATINGS = ['5', '4', '3', '2', '1'];
 const CENTRAL_ADMIN_EMAIL = 'admin@admin.com';
 
-// ==================== GRADING & REMARK LOGIC ====================
+// ==================== AUTOMATIC REMARK LOGIC ====================
 const getGrade = (score, max) => {
   const percent = (score / max) * 100;
   if (percent >= 80) return { g: 'A', r: 'Excellent' };
@@ -24,13 +24,22 @@ const getGrade = (score, max) => {
   return { g: 'F', r: 'Needs Improvement' };
 };
 
+const getTutorRemark = (avg) => {
+    const s = parseFloat(avg);
+    if (s >= 80) return "An exceptionally brilliant performance. Keep up the high standard.";
+    if (s >= 70) return "A very good result. Your diligence is reflected in your grades.";
+    if (s >= 60) return "A good performance. You have the potential to do even better.";
+    if (s >= 50) return "A fair result. More focus is needed in your core subjects.";
+    return "A weak performance. You must put in more effort next term.";
+};
+
 const getPrincipalRemark = (avg) => {
-    const score = parseFloat(avg);
-    if (score >= 80) return "An excellent result. You have demonstrated exceptional academic consistency.";
-    if (score >= 70) return "A very good performance. Maintain this standard of excellence.";
-    if (score >= 60) return "A good result. With a bit more focus in your weak areas, you can reach the top.";
-    if (score >= 50) return "A fair performance, however, there is significant room for improvement.";
-    return "Poor performance. You are advised to double your effort and seek academic counseling.";
+    const s = parseFloat(avg);
+    if (s >= 80) return "Excellent academic standing. A very promising student.";
+    if (s >= 70) return "Very impressive results. Maintain this momentum.";
+    if (s >= 60) return "Good work. There is still room for improvement to reach the top.";
+    if (s >= 50) return "Passable. You are encouraged to study harder and seek help where needed.";
+    return "Poor performance. Urgent academic intervention is required.";
 };
 
 // ==================== PDF STYLES ====================
@@ -71,8 +80,9 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
   const avg = results?.length > 0 ? ((totalScore / possible) * 100).toFixed(1) : 0;
   const isApproved = comments?.submission_status === 'approved';
 
-  // Automatic Principal Logic
-  const principalRemark = comments?.principal_comment || (isApproved ? getPrincipalRemark(avg) : '---');
+  // Fallback to auto-remarks if fields are blank
+  const finalTutorRemark = comments?.tutor_comment || getTutorRemark(avg);
+  const finalPrincipalRemark = comments?.principal_comment || getPrincipalRemark(avg);
 
   return (
     <Document>
@@ -135,12 +145,12 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
 
         <View style={pdfStyles.remarksBox}>
           <Text style={pdfStyles.remarksHeader}>Form Tutor's Remark</Text>
-          <Text style={pdfStyles.remarksText}>{comments?.tutor_comment || '---'}</Text>
+          <Text style={pdfStyles.remarksText}>{finalTutorRemark}</Text>
         </View>
 
         <View style={pdfStyles.remarksBox}>
           <Text style={pdfStyles.remarksHeader}>Principal's Remark</Text>
-          <Text style={pdfStyles.remarksText}>{principalRemark}</Text>
+          <Text style={pdfStyles.remarksText}>{finalPrincipalRemark}</Text>
         </View>
 
         <View style={pdfStyles.footer}>
@@ -224,29 +234,25 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     } catch (e) { alert("Error saving: " + e.message); }
   };
 
-  // UPDATED ZIP LOGIC: DOWNLOADS WHOLE SCHOOL ORGANIZED BY CLASS
-  const downloadWholeSchoolMidterms = async () => {
+  const downloadWholeSchoolZip = async () => {
     if (!school?.id) return;
     setIsZipping(true);
     try {
       const zip = new JSZip();
       
-      // 1. Fetch all students for the whole school
       const { data: allStudents } = await supabase
         .from('students')
         .select('*, classes(name)')
         .eq('school_id', school.id);
 
-      // 2. Fetch all relevant results and comments in bulk
       const studentIds = allStudents.map(s => s.id);
       const { data: allResults } = await supabase.from('results').select('*, subjects(*)').in('student_id', studentIds);
       const { data: allComments } = await supabase.from('comments').select('*').in('student_id', studentIds);
 
-      // 3. Process each student
       for (const student of allStudents) {
         const studentResults = allResults.filter(r => r.student_id === student.id);
         const studentComments = allComments.find(c => c.student_id === student.id) || { behaviors: {} };
-        const className = student.classes?.name || 'Unassigned';
+        const className = student.classes?.name || 'General';
 
         const blob = await pdf(
           <ResultPDF 
@@ -258,14 +264,13 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           />
         ).toBlob();
         
-        // Add to class folder in ZIP
         zip.folder(className).file(`${student.name.replace(/\s+/g, '_')}_MidTerm.pdf`, blob);
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `${school.name.replace(/\s+/g, '_')}_Full_School_MidTerms.zip`);
+      saveAs(content, `${school.name.replace(/\s+/g, '_')}_All_Classes_MidTerm.zip`);
     } catch (err) {
-      alert("Bulk Export Error: " + err.message);
+      alert("ZIP Export Error: " + err.message);
     } finally {
       setIsZipping(false);
     }
@@ -308,12 +313,12 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           <div className="flex-1 text-indigo-900 font-bold uppercase tracking-widest text-sm">{school?.name || "Loading Institution..."}</div>
           
           <button 
-             onClick={downloadWholeSchoolMidterms} 
+             onClick={downloadWholeSchoolZip} 
              disabled={isZipping}
              className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter flex items-center gap-2"
            >
              {isZipping ? <Loader2 className="animate-spin" size={14}/> : <Archive size={14}/>}
-             {isZipping ? 'Generating (Whole School)...' : 'Download All Classes (ZIP)'}
+             {isZipping ? 'Generating (Full School)...' : 'Download All Classes (ZIP)'}
           </button>
 
           {selectedStudent && (
@@ -339,7 +344,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                     {tab==='traits' && (
                         <div className="space-y-6">
                             <div className="grid grid-cols-2 gap-4">{BEHAVIORS.map(b => (<div key={b} className="p-4 bg-white rounded-2xl border flex justify-between items-center"><span className="text-xs font-black text-slate-500 uppercase">{b}</span><select className="border-2 rounded-xl p-1 font-bold outline-none focus:border-indigo-500" value={commentData.behaviors?.[b] || ''} onChange={(e)=>setCommentData({...commentData, behaviors: {...commentData.behaviors, [b]: e.target.value}})}><option value="">-</option>{RATINGS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>))}</div>
-                            <textarea className="w-full p-6 border-2 rounded-3xl h-40 outline-none focus:border-indigo-500 shadow-sm" placeholder="Form Tutor Remark..." value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
+                            <textarea className="w-full p-6 border-2 rounded-3xl h-40 outline-none focus:border-indigo-500 shadow-sm" placeholder="Form Tutor Remark (Leave empty for auto-remark)..." value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
                         </div>
                     )}
                 </div>
@@ -435,7 +440,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
           <div className="bg-white p-8 rounded-3xl w-full max-w-xl">
             <h3 className="text-xl font-black mb-4">Approval: {selectedStudent.name}</h3>
             <div className="mb-4 p-4 bg-indigo-50 rounded-2xl italic text-sm">"{commentData.tutor_comment || 'No tutor remark'}"</div>
-            <textarea className="w-full border-2 p-4 h-40 rounded-xl mb-6 outline-none focus:border-indigo-500" placeholder="Principal's remark..." value={commentData.principal_comment || ''} onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})} />
+            <textarea className="w-full border-2 p-4 h-40 rounded-xl mb-6 outline-none focus:border-indigo-500" placeholder="Principal's remark (Leave empty for auto-remark)..." value={commentData.principal_comment || ''} onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})} />
             <div className="flex gap-4"><button onClick={approve} className="flex-1 bg-indigo-600 text-white py-4 rounded-xl font-bold uppercase text-xs">Approve & Publish</button><button onClick={()=>setSelectedStudent(null)} className="px-6 font-bold text-slate-400 uppercase text-xs">Cancel</button></div>
           </div>
         </div>
@@ -467,7 +472,7 @@ const CentralAdminDashboard = ({ onLogout }) => {
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="flex justify-between items-center bg-slate-900 text-white p-6 rounded-2xl mb-8 shadow-xl"><h1 className="text-2xl font-black flex items-center gap-3"><Shield className="text-indigo-400"/> GLOBAL CORE</h1><button onClick={onLogout} className="bg-white/10 px-6 py-2 rounded-xl font-bold">Logout</button></div>
       <div className="bg-white rounded-2xl shadow-sm border overflow-hidden"><table className="w-full text-left"><thead className="bg-slate-50 border-b text-[10px] font-black uppercase"><tr><th className="p-4">User</th><th>School</th><th>Role</th><th>Action</th></tr></thead><tbody>{users.map(u => (<tr key={u.id} className="border-b hover:bg-slate-50"><td className="p-4 font-bold">{u.full_name}</td><td>{u.schools?.name || 'None'}</td><td><span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase">{u.role}</span></td><td><button onClick={() => setSelectedUser(u)} className="p-2 text-indigo-600"><UserCog size={18}/></button></td></tr>))}</tbody></table></div>
-      {selectedUser && (<div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-3xl w-full max-w-sm"><h3 className="text-lg font-black mb-6 uppercase text-center">Manage Privileges</h3><div className="space-y-4"><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.role} onChange={(e) => updateStaff(selectedUser.id, { role: e.target.value })}><option value="teacher">Teacher</option><option value="admin">School Admin</option></select><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.school_id} onChange={(e) => updateStaff(selectedUser.id, { school_id: e.target.value })}><option value="">No School</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select><button onClick={() => setSelectedUser(null)} className="w-full py-4 text-slate-400 font-bold uppercase text-xs">Close</button></div></div></div>)}
+      {selectedUser && (<div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-3xl w-full max-sm"><h3 className="text-lg font-black mb-6 uppercase text-center">Manage Privileges</h3><div className="space-y-4"><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.role} onChange={(e) => updateStaff(selectedUser.id, { role: e.target.value })}><option value="teacher">Teacher</option><option value="admin">School Admin</option></select><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.school_id} onChange={(e) => updateStaff(selectedUser.id, { school_id: e.target.value })}><option value="">No School</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select><button onClick={() => setSelectedUser(null)} className="w-full py-4 text-slate-400 font-bold uppercase text-xs">Close</button></div></div></div>)}
     </div>
   );
 };
