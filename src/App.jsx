@@ -54,7 +54,7 @@ const pdfStyles = StyleSheet.create({
   bioSection: { flexDirection: 'row', marginBottom: 20, gap: 10 },
   bioBox: { flex: 1, padding: 12, backgroundColor: '#f8fafc', borderRadius: 8, border: '0.5pt solid #e2e8f0' },
   bioRow: { flexDirection: 'row', marginBottom: 4 },
-  label: { width: 70, color: '#64748b', fontSize: 7, textTransform: 'uppercase', fontWeight: 'bold' },
+  label: { width: 75, color: '#64748b', fontSize: 7, textTransform: 'uppercase', fontWeight: 'bold' },
   value: { flex: 1, fontWeight: 'bold', fontSize: 9, color: '#1e293b' },
   table: { marginTop: 5, border: '0.5pt solid #e2e8f0', borderRadius: 4, overflow: 'hidden' },
   th: { backgroundColor: '#4338ca', color: '#ffffff', flexDirection: 'row', padding: 8, fontWeight: 'bold', fontSize: 8 },
@@ -64,7 +64,7 @@ const pdfStyles = StyleSheet.create({
   behaviorTitle: { fontSize: 8, fontWeight: 'bold', color: '#4338ca', marginTop: 20, marginBottom: 8, textTransform: 'uppercase' },
   behaviorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   behaviorItem: { width: '23%', padding: 6, backgroundColor: '#f8fafc', borderRadius: 4, border: '0.5pt solid #e2e8f0' },
-  remarksBox: { marginTop: 20, padding: 12, border: '0.5pt solid #e2e8f0', borderRadius: 8, backgroundColor: '#ffffff' },
+  remarksBox: { marginTop: 15, padding: 12, border: '0.5pt solid #e2e8f0', borderRadius: 8, backgroundColor: '#ffffff' },
   remarksHeader: { fontSize: 7, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', marginBottom: 4 },
   remarksText: { fontSize: 9, lineHeight: 1.4, color: '#334155' },
   footer: { marginTop: 'auto', flexDirection: 'row', justifyContent: 'space-between', paddingTop: 20 },
@@ -80,7 +80,6 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
   const avg = results?.length > 0 ? ((totalScore / possible) * 100).toFixed(1) : 0;
   const isApproved = comments?.submission_status === 'approved';
 
-  // Fallback to auto-remarks if fields are blank
   const finalTutorRemark = comments?.tutor_comment || getTutorRemark(avg);
   const finalPrincipalRemark = comments?.principal_comment || getPrincipalRemark(avg);
 
@@ -107,8 +106,8 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
           <View style={pdfStyles.bioBox}>
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Average</Text><Text style={pdfStyles.value}>{avg}%</Text></View>
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Grade</Text><Text style={pdfStyles.value}>{getGrade(totalScore, possible).g}</Text></View>
-            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Present</Text><Text style={pdfStyles.value}>{comments?.present || '---'}</Text></View>
-            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Absent</Text><Text style={pdfStyles.value}>{comments?.absent || '---'}</Text></View>
+            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Times Present</Text><Text style={pdfStyles.value}>{comments?.present || '---'}</Text></View>
+            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Times Absent</Text><Text style={pdfStyles.value}>{comments?.absent || '---'}</Text></View>
           </View>
         </View>
 
@@ -176,7 +175,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [scores, setScores] = useState({});
   const [currentResults, setCurrentResults] = useState([]);
-  const [commentData, setCommentData] = useState({ behaviors: {} });
+  const [commentData, setCommentData] = useState({ behaviors: {}, total_days: '', present: '', absent: '' });
   const [preview, setPreview] = useState(null);
   const [tab, setTab] = useState('scores');
   const [side, setSide] = useState(false);
@@ -244,12 +243,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setIsZipping(true);
     try {
       const zip = new JSZip();
-      
-      const { data: allStudents } = await supabase
-        .from('students')
-        .select('*, classes(name)')
-        .eq('school_id', school.id);
-
+      const { data: allStudents } = await supabase.from('students').select('*, classes(name)').eq('school_id', school.id);
       const studentIds = allStudents.map(s => s.id);
       const { data: allResults } = await supabase.from('results').select('*, subjects(*)').in('student_id', studentIds);
       const { data: allComments } = await supabase.from('comments').select('*').in('student_id', studentIds);
@@ -258,27 +252,12 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         const studentResults = allResults.filter(r => r.student_id === student.id);
         const studentComments = allComments.find(c => c.student_id === student.id) || { behaviors: {} };
         const className = student.classes?.name || 'General';
-
-        const blob = await pdf(
-          <ResultPDF 
-            school={school} 
-            student={student} 
-            results={studentResults} 
-            comments={studentComments} 
-            type="mid" 
-          />
-        ).toBlob();
-        
+        const blob = await pdf(<ResultPDF school={school} student={student} results={studentResults} comments={studentComments} type="mid" />).toBlob();
         zip.folder(className).file(`${student.name.replace(/\s+/g, '_')}_MidTerm.pdf`, blob);
       }
-
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `${school.name.replace(/\s+/g, '_')}_All_Classes_MidTerm.zip`);
-    } catch (err) {
-      alert("ZIP Export Error: " + err.message);
-    } finally {
-      setIsZipping(false);
-    }
+      saveAs(content, `${school.name.replace(/\s+/g, '_')}_MidTerm_Reports.zip`);
+    } catch (err) { alert("Export Error: " + err.message); } finally { setIsZipping(false); }
   };
 
   return (
@@ -297,7 +276,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           }}><Plus size={14}/></button>
         </div>
 
-        <div className="space-y-1 mb-8">
+        <div className="space-y-1 mb-8 overflow-y-auto max-h-40">
             {classList.map(c => (<div key={c.id} className="flex items-center justify-between group"><button onClick={()=>loadClass(c.id)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedClassId === c.id ? 'bg-indigo-600' : 'hover:bg-white/5'}`}>{c.name}</button><button onClick={async ()=>{if(window.confirm("Delete Class?")){await supabase.from('classes').delete().eq('id', c.id); await init();}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}
         </div>
 
@@ -316,21 +295,12 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         <div className="p-6 bg-white border-b flex items-center gap-4">
           <button onClick={()=>setSide(true)} className="lg:hidden"><Menu/></button>
           <div className="flex-1 text-indigo-900 font-bold uppercase tracking-widest text-sm">{school?.name || "Loading Institution..."}</div>
-          
-          <button 
-             onClick={downloadWholeSchoolZip} 
-             disabled={isZipping}
-             className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter flex items-center gap-2"
-           >
-             {isZipping ? <Loader2 className="animate-spin" size={14}/> : <Archive size={14}/>}
-             {isZipping ? 'Generating (Full School)...' : 'Download All Classes (ZIP)'}
-          </button>
-
+          <button onClick={downloadWholeSchoolZip} disabled={isZipping} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter flex items-center gap-2">{isZipping ? <Loader2 className="animate-spin" size={14}/> : <Archive size={14}/>} {isZipping ? 'Generating...' : 'Download ZIP'}</button>
           {selectedStudent && (
             <div className="flex gap-2">
-              <button onClick={()=>setPreview('mid')} className="bg-slate-100 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Mid-Term Preview</button>
-              <button onClick={()=>setPreview('full')} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Full Report Preview</button>
-              <button onClick={saveResults} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold shadow-lg shadow-indigo-100">Save Progress</button>
+              <button onClick={()=>setPreview('mid')} className="bg-slate-100 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Mid Preview</button>
+              <button onClick={()=>setPreview('full')} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Full Preview</button>
+              <button onClick={saveResults} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold">Save</button>
             </div>
           )}
         </div>
@@ -348,33 +318,33 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                     )}
                     {tab==='traits' && (
                         <div className="space-y-6">
-                            <div className="grid grid-cols-3 gap-4 mb-4">
-                                <div className="p-4 bg-white rounded-2xl border flex flex-col gap-1">
-                                    <span className="text-[10px] font-black text-slate-500 uppercase">School Opened</span>
-                                    <input type="number" className="border-2 rounded-xl p-2 font-bold outline-none focus:border-indigo-500" value={commentData.total_days || ''} onChange={(e)=>setCommentData({...commentData, total_days: e.target.value})} />
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="bg-white p-4 rounded-2xl border flex flex-col">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase mb-2">Days Opened</span>
+                                    <input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500" value={commentData.total_days || ''} onChange={(e)=>setCommentData({...commentData, total_days: e.target.value})} />
                                 </div>
-                                <div className="p-4 bg-white rounded-2xl border flex flex-col gap-1">
-                                    <span className="text-[10px] font-black text-slate-500 uppercase">Times Present</span>
-                                    <input type="number" className="border-2 rounded-xl p-2 font-bold outline-none focus:border-indigo-500" value={commentData.present || ''} onChange={(e)=>setCommentData({...commentData, present: e.target.value})} />
+                                <div className="bg-white p-4 rounded-2xl border flex flex-col">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Present</span>
+                                    <input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500" value={commentData.present || ''} onChange={(e)=>setCommentData({...commentData, present: e.target.value})} />
                                 </div>
-                                <div className="p-4 bg-white rounded-2xl border flex flex-col gap-1">
-                                    <span className="text-[10px] font-black text-slate-500 uppercase">Times Absent</span>
-                                    <input type="number" className="border-2 rounded-xl p-2 font-bold outline-none focus:border-indigo-500" value={commentData.absent || ''} onChange={(e)=>setCommentData({...commentData, absent: e.target.value})} />
+                                <div className="bg-white p-4 rounded-2xl border flex flex-col">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Absent</span>
+                                    <input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500" value={commentData.absent || ''} onChange={(e)=>setCommentData({...commentData, absent: e.target.value})} />
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">{BEHAVIORS.map(b => (<div key={b} className="p-4 bg-white rounded-2xl border flex justify-between items-center"><span className="text-xs font-black text-slate-500 uppercase">{b}</span><select className="border-2 rounded-xl p-1 font-bold outline-none focus:border-indigo-500" value={commentData.behaviors?.[b] || ''} onChange={(e)=>setCommentData({...commentData, behaviors: {...commentData.behaviors, [b]: e.target.value}})}><option value="">-</option>{RATINGS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>))}</div>
-                            <textarea className="w-full p-6 border-2 rounded-3xl h-40 outline-none focus:border-indigo-500 shadow-sm" placeholder="Form Tutor Remark (Leave empty for auto-remark)..." value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
+                            <div className="grid grid-cols-2 gap-4">{BEHAVIORS.map(b => (<div key={b} className="p-4 bg-white rounded-2xl border flex justify-between items-center"><span className="text-xs font-black text-slate-500 uppercase">{b}</span><select className="border-2 rounded-xl p-1 font-bold outline-none focus:border-indigo-500" value={commentData.behaviors?.[b] || ''} onChange={(e)=>setCommentData({...commentData, behaviors: {...(commentData.behaviors||{}), [b]: e.target.value}})}><option value="">-</option>{RATINGS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>))}</div>
+                            <textarea className="w-full p-6 border-2 rounded-3xl h-32 outline-none focus:border-indigo-500" placeholder="Form Tutor Remark..." value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
                         </div>
                     )}
                 </div>
-            ) : (<div className="h-full flex flex-col items-center justify-center text-slate-300"><CheckCircle size={80} className="mb-4 opacity-10"/><p className="font-black uppercase tracking-widest text-sm">Select a student or class to begin</p></div>)}
+            ) : (<div className="h-full flex flex-col items-center justify-center text-slate-300"><CheckCircle size={80} className="mb-4 opacity-10"/><p className="font-black uppercase tracking-widest text-sm">Select a student</p></div>)}
         </div>
       </div>
       {preview && (
         <div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col p-4 backdrop-blur-md">
           <div className="bg-white p-4 flex justify-between rounded-t-3xl border-b shadow-xl">
-            <button onClick={()=>setPreview(null)} className="text-red-500 font-black flex items-center gap-2"><X size={20}/> CLOSE PREVIEW</button>
-            <PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} />} fileName={`Transcript_${selectedStudent?.name}.pdf`} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg uppercase text-xs">Download Result</PDFDownloadLink>
+            <button onClick={()=>setPreview(null)} className="text-red-500 font-black flex items-center gap-2"><X size={20}/> CLOSE</button>
+            <PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} />} fileName={`${selectedStudent?.name}_Result.pdf`} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs">Download</PDFDownloadLink>
           </div>
           <PDFViewer className="flex-1 rounded-b-3xl border-none"><ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} /></PDFViewer>
         </div>
@@ -402,7 +372,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
 
   const approve = async () => {
     await supabase.from('comments').update({ submission_status: 'approved', principal_comment: commentData.principal_comment }).eq('student_id', selectedStudent.id);
-    alert("Result Approved!"); setSelectedStudent(null); await load();
+    alert("Approved!"); setSelectedStudent(null); await load();
   };
 
   const onLogoUpload = async (e) => {
@@ -458,8 +428,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-8 rounded-3xl w-full max-w-xl">
             <h3 className="text-xl font-black mb-4">Approval: {selectedStudent.name}</h3>
-            <div className="mb-4 p-4 bg-indigo-50 rounded-2xl italic text-sm">"{commentData.tutor_comment || 'No tutor remark'}"</div>
-            <textarea className="w-full border-2 p-4 h-40 rounded-xl mb-6 outline-none focus:border-indigo-500" placeholder="Principal's remark (Leave empty for auto-remark)..." value={commentData.principal_comment || ''} onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})} />
+            <textarea className="w-full border-2 p-4 h-40 rounded-xl mb-6 outline-none focus:border-indigo-500" placeholder="Principal's remark..." value={commentData.principal_comment || ''} onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})} />
             <div className="flex gap-4"><button onClick={approve} className="flex-1 bg-indigo-600 text-white py-4 rounded-xl font-bold uppercase text-xs">Approve & Publish</button><button onClick={()=>setSelectedStudent(null)} className="px-6 font-bold text-slate-400 uppercase text-xs">Cancel</button></div>
           </div>
         </div>
