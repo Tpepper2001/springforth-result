@@ -1,3 +1,5 @@
+--- START OF FILE Paste March 05, 2026 - 11:37AM ---
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink, Image, pdf } from '@react-pdf/renderer';
@@ -102,11 +104,13 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Student</Text><Text style={pdfStyles.value}>{student?.name}</Text></View>
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Adm No</Text><Text style={pdfStyles.value}>{student?.admission_no}</Text></View>
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Class</Text><Text style={pdfStyles.value}>{student?.classes?.name || '---'}</Text></View>
+            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Days Open</Text><Text style={pdfStyles.value}>{comments?.total_days || '---'}</Text></View>
           </View>
           <View style={pdfStyles.bioBox}>
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Average</Text><Text style={pdfStyles.value}>{avg}%</Text></View>
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Grade</Text><Text style={pdfStyles.value}>{getGrade(totalScore, possible).g}</Text></View>
-            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Term</Text><Text style={pdfStyles.value}>2025/2026 Session</Text></View>
+            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Present</Text><Text style={pdfStyles.value}>{comments?.present || '---'}</Text></View>
+            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Absent</Text><Text style={pdfStyles.value}>{comments?.absent || '---'}</Text></View>
           </View>
         </View>
 
@@ -207,7 +211,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     const { data: co } = await supabase.from('comments').select('*').eq('student_id', s.id).maybeSingle();
     setCurrentResults(rs || []);
     setScores(rs?.reduce((a, r) => ({ ...a, [r.subject_id]: r.scores }), {}) || {});
-    setCommentData(co || { behaviors: {}, submission_status: 'draft' });
+    setCommentData(co || { behaviors: {}, submission_status: 'draft', total_days: '', present: '', absent: '' });
   };
 
   const saveResults = async () => {
@@ -223,7 +227,10 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           student_id: selectedStudent.id, 
           school_id: school.id, 
           tutor_comment: commentData.tutor_comment, 
-          behaviors: commentData.behaviors, 
+          behaviors: commentData.behaviors,
+          total_days: commentData.total_days,
+          present: commentData.present,
+          absent: commentData.absent,
           submission_status: 'pending' 
         };
         if (commentData.id) commentPayload.id = commentData.id;
@@ -343,6 +350,20 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                     )}
                     {tab==='traits' && (
                         <div className="space-y-6">
+                            <div className="grid grid-cols-3 gap-4 mb-4">
+                                <div className="p-4 bg-white rounded-2xl border flex flex-col gap-1">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase">School Opened</span>
+                                    <input type="number" className="border-2 rounded-xl p-2 font-bold outline-none focus:border-indigo-500" value={commentData.total_days || ''} onChange={(e)=>setCommentData({...commentData, total_days: e.target.value})} />
+                                </div>
+                                <div className="p-4 bg-white rounded-2xl border flex flex-col gap-1">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase">Times Present</span>
+                                    <input type="number" className="border-2 rounded-xl p-2 font-bold outline-none focus:border-indigo-500" value={commentData.present || ''} onChange={(e)=>setCommentData({...commentData, present: e.target.value})} />
+                                </div>
+                                <div className="p-4 bg-white rounded-2xl border flex flex-col gap-1">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase">Times Absent</span>
+                                    <input type="number" className="border-2 rounded-xl p-2 font-bold outline-none focus:border-indigo-500" value={commentData.absent || ''} onChange={(e)=>setCommentData({...commentData, absent: e.target.value})} />
+                                </div>
+                            </div>
                             <div className="grid grid-cols-2 gap-4">{BEHAVIORS.map(b => (<div key={b} className="p-4 bg-white rounded-2xl border flex justify-between items-center"><span className="text-xs font-black text-slate-500 uppercase">{b}</span><select className="border-2 rounded-xl p-1 font-bold outline-none focus:border-indigo-500" value={commentData.behaviors?.[b] || ''} onChange={(e)=>setCommentData({...commentData, behaviors: {...commentData.behaviors, [b]: e.target.value}})}><option value="">-</option>{RATINGS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>))}</div>
                             <textarea className="w-full p-6 border-2 rounded-3xl h-40 outline-none focus:border-indigo-500 shadow-sm" placeholder="Form Tutor Remark (Leave empty for auto-remark)..." value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
                         </div>
