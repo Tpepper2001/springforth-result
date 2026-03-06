@@ -219,46 +219,42 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         });
         await supabase.from('results').delete().eq('student_id', selectedStudent.id);
         await supabase.from('results').insert(ups);
-        
-        const commentPayload = { 
-          student_id: selectedStudent.id, 
-          school_id: school.id, 
-          tutor_comment: commentData.tutor_comment, 
-          behaviors: commentData.behaviors,
-          total_days: commentData.total_days,
-          present: commentData.present,
-          absent: commentData.absent,
-          submission_status: 'pending' 
-        };
+        const commentPayload = { student_id: selectedStudent.id, school_id: school.id, tutor_comment: commentData.tutor_comment, behaviors: commentData.behaviors, total_days: commentData.total_days, present: commentData.present, absent: commentData.absent, submission_status: 'pending' };
         if (commentData.id) commentPayload.id = commentData.id;
-
         await supabase.from('comments').upsert(commentPayload, { onConflict: 'student_id' });
-        
         alert("Saved Successfully!"); selectStu(selectedStudent);
     } catch (e) { alert("Error saving: " + e.message); }
   };
 
+  const downloadWholeSchoolZip = async () => {
+    if (!school?.id) return;
+    setIsZipping(true);
+    try {
+      const zip = new JSZip();
+      const { data: allSt } = await supabase.from('students').select('*, classes(name)').eq('school_id', school.id);
+      const stIds = allSt.map(s => s.id);
+      const { data: allRes } = await supabase.from('results').select('*, subjects(*)').in('student_id', stIds);
+      const { data: allCom } = await supabase.from('comments').select('*').in('student_id', stIds);
+      for (const student of allSt) {
+        const studentResults = allRes.filter(r => r.student_id === student.id);
+        const studentComments = allCom.find(c => c.student_id === student.id) || { behaviors: {} };
+        const className = student.classes?.name || 'General';
+        const blob = await pdf(<ResultPDF school={school} student={student} results={studentResults} comments={studentComments} type="mid" />).toBlob();
+        zip.folder(className).file(`${student.name.replace(/\s+/g, '_')}_Result.pdf`, blob);
+      }
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `${school.name.replace(/\s+/g, '_')}_Reports.zip`);
+    } catch (err) { alert("ZIP Error: " + err.message); } finally { setIsZipping(false); }
+  };
+
   return (
     <div className="flex h-screen bg-slate-50">
-      {/* Sidebar: Removed height limits on class list to fix Grade 1-3 only issue */}
       <div className={`fixed lg:static inset-y-0 left-0 w-72 bg-indigo-950 text-white p-6 transition-transform z-40 flex flex-col ${side ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="flex justify-between items-center mb-8 shrink-0"><h1 className="text-xl font-black text-indigo-300 flex items-center gap-2"><School/> TEACHER</h1><button onClick={()=>setSide(false)} className="lg:hidden"><X/></button></div>
-        
-        <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400 shrink-0">
-          <span>Classes</span>
-          <button onClick={async ()=>{
-            const n = prompt("Enter Class Name:"); 
-            if(!n) return;
-            const targetId = profile?.school_id || school?.id;
-            const { error } = await supabase.from('classes').insert({ name: n, school_id: targetId });
-            if(error) alert(error.message); else await init();
-          }}><Plus size={14}/></button>
-        </div>
-
+        <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400 shrink-0"><span>Classes</span><button onClick={async ()=>{const n = prompt("Enter Class Name:"); if(!n) return; const targetId = profile?.school_id || school?.id; const { error } = await supabase.from('classes').insert({ name: n, school_id: targetId }); if(error) alert(error.message); else await init();}}><Plus size={14}/></button></div>
         <div className="space-y-1 mb-8 overflow-y-auto flex-1 border-b border-white/10 pb-4">
             {classList.map(c => (<div key={c.id} className="flex items-center justify-between group"><button onClick={()=>loadClass(c.id)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedClassId === c.id ? 'bg-indigo-600' : 'hover:bg-white/5'}`}>{c.name}</button><button onClick={async ()=>{if(window.confirm("Delete Class?")){await supabase.from('classes').delete().eq('id', c.id); await init();}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}
         </div>
-
         {selectedClassId && (
           <div className="flex-1 overflow-y-auto">
             <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><Users size={12} className="inline mr-1"/> Students</span><button onClick={async ()=>{const n = prompt("Name:"); if(n) { const targetId = profile?.school_id || school?.id; const { error } = await supabase.from('students').insert([{name:n, class_id:selectedClassId, school_id: targetId, admission_no:`ADM-${Math.floor(Math.random()*9999)}`}]); if(error) alert(error.message); else await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
@@ -269,71 +265,27 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         )}
         <button onClick={onLogout} className="mt-8 shrink-0 flex items-center gap-3 text-red-400 font-bold p-3 hover:bg-red-400/10 rounded-xl w-full transition"><LogOut size={20}/> Logout</button>
       </div>
-
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <div className="p-6 bg-white border-b flex items-center gap-4">
           <button onClick={()=>setSide(true)} className="lg:hidden"><Menu/></button>
-          <div className="flex-1 text-indigo-900 font-bold uppercase tracking-widest text-sm">{school?.name || "Loading Institution..."}</div>
-          {selectedStudent && (
-            <div className="flex gap-2">
-              <button onClick={()=>setPreview('mid')} className="bg-slate-100 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Mid Preview</button>
-              <button onClick={()=>setPreview('full')} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Full Preview</button>
-              <button onClick={saveResults} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold">Save</button>
-            </div>
-          )}
+          <div className="flex-1 text-indigo-900 font-bold uppercase tracking-widest text-sm">{school?.name || "Institution..."}</div>
+          <button onClick={downloadWholeSchoolZip} disabled={isZipping} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter flex items-center gap-2">{isZipping ? <Loader2 className="animate-spin" size={14}/> : <Archive size={14}/>} {isZipping ? 'Generating...' : 'Download ZIP'}</button>
+          {selectedStudent && (<div className="flex gap-2"><button onClick={()=>setPreview('mid')} className="bg-slate-100 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Mid Preview</button><button onClick={()=>setPreview('full')} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Full Preview</button><button onClick={saveResults} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold">Save</button></div>)}
         </div>
         <div className="flex-1 overflow-y-auto p-8">
             {selectedStudent ? (
                 <div className="max-w-4xl mx-auto space-y-8">
                     <div className="flex gap-8 border-b">{['scores', 'traits'].map(t => <button key={t} onClick={()=>setTab(t)} className={`pb-4 font-black uppercase text-xs tracking-widest ${tab===t ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>{t}</button>)}</div>
-                    {tab==='scores' && (
-                        <div className="bg-white p-8 rounded-3xl border shadow-sm">
-                            <table className="w-full text-left">
-                                <thead className="text-[10px] font-black uppercase text-slate-400 border-b"><tr><th className="pb-4">Subject</th><th className="pb-4">CA (40%)</th><th className="pb-4">Exam (60%)</th><th className="pb-4">Total</th></tr></thead>
-                                <tbody>{subjects.map(sub => (<tr key={sub.id} className="border-b last:border-0"><td className="py-5 font-bold text-slate-700">{sub.name}</td><td><input type="number" className="w-24 border-2 rounded-xl p-2 focus:border-indigo-500 outline-none" value={scores[sub.id]?.ca || ''} onChange={(e)=>setScores({...scores, [sub.id]: {...(scores[sub.id]||{}), ca: e.target.value}})} /></td><td><input type="number" className="w-24 border-2 rounded-xl p-2 focus:border-indigo-500 outline-none" value={scores[sub.id]?.exam || ''} onChange={(e)=>setScores({...scores, [sub.id]: {...(scores[sub.id]||{}), exam: e.target.value}})} /></td><td className="font-black text-indigo-600">{(parseFloat(scores[sub.id]?.ca)||0) + (parseFloat(scores[sub.id]?.exam)||0)}</td></tr>))}</tbody>
-                            </table>
-                        </div>
-                    )}
-                    {tab==='traits' && (
-                        <div className="space-y-6">
-                            {/* Attendance Input Section */}
-                            <div className="grid grid-cols-3 gap-4">
-                                <div className="bg-white p-4 rounded-2xl border flex flex-col">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase mb-2">School Opened</span>
-                                    <input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.total_days || ''} onChange={(e)=>setCommentData({...commentData, total_days: e.target.value})} />
-                                </div>
-                                <div className="bg-white p-4 rounded-2xl border flex flex-col">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Present</span>
-                                    <input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.present || ''} onChange={(e)=>setCommentData({...commentData, present: e.target.value})} />
-                                </div>
-                                <div className="bg-white p-4 rounded-2xl border flex flex-col">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Absent</span>
-                                    <input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.absent || ''} onChange={(e)=>setCommentData({...commentData, absent: e.target.value})} />
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">{BEHAVIORS.map(b => (<div key={b} className="p-4 bg-white rounded-2xl border flex justify-between items-center"><span className="text-xs font-black text-slate-500 uppercase">{b}</span><select className="border-2 rounded-xl p-1 font-bold outline-none focus:border-indigo-500" value={commentData.behaviors?.[b] || ''} onChange={(e)=>setCommentData({...commentData, behaviors: {...(commentData.behaviors||{}), [b]: e.target.value}})}><option value="">-</option>{RATINGS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>))}</div>
-                            <textarea className="w-full p-6 border-2 rounded-3xl h-32 outline-none focus:border-indigo-500" placeholder="Form Tutor Remark..." value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} />
-                        </div>
-                    )}
+                    {tab==='scores' && (<div className="bg-white p-8 rounded-3xl border shadow-sm"><table className="w-full text-left"><thead className="text-[10px] font-black uppercase text-slate-400 border-b"><tr><th className="pb-4">Subject</th><th className="pb-4">CA (40%)</th><th className="pb-4">Exam (60%)</th><th className="pb-4">Total</th></tr></thead><tbody>{subjects.map(sub => (<tr key={sub.id} className="border-b last:border-0"><td className="py-5 font-bold text-slate-700">{sub.name}</td><td><input type="number" className="w-24 border-2 rounded-xl p-2 focus:border-indigo-500 outline-none" value={scores[sub.id]?.ca || ''} onChange={(e)=>setScores({...scores, [sub.id]: {...(scores[sub.id]||{}), ca: e.target.value}})} /></td><td><input type="number" className="w-24 border-2 rounded-xl p-2 focus:border-indigo-500 outline-none" value={scores[sub.id]?.exam || ''} onChange={(e)=>setScores({...scores, [sub.id]: {...(scores[sub.id]||{}), exam: e.target.value}})} /></td><td className="font-black text-indigo-600">{(parseFloat(scores[sub.id]?.ca)||0) + (parseFloat(scores[sub.id]?.exam)||0)}</td></tr>))}</tbody></table></div>)}
+                    {tab==='traits' && (<div className="space-y-6"><div className="grid grid-cols-3 gap-4"><div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">School Opened</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.total_days || ''} onChange={(e)=>setCommentData({...commentData, total_days: e.target.value})} /></div><div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Present</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.present || ''} onChange={(e)=>setCommentData({...commentData, present: e.target.value})} /></div><div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Absent</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.absent || ''} onChange={(e)=>setCommentData({...commentData, absent: e.target.value})} /></div></div><div className="grid grid-cols-2 gap-4">{BEHAVIORS.map(b => (<div key={b} className="p-4 bg-white rounded-2xl border flex justify-between items-center"><span className="text-xs font-black text-slate-500 uppercase">{b}</span><select className="border-2 rounded-xl p-1 font-bold outline-none focus:border-indigo-500" value={commentData.behaviors?.[b] || ''} onChange={(e)=>setCommentData({...commentData, behaviors: {...(commentData.behaviors||{}), [b]: e.target.value}})}><option value="">-</option>{RATINGS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>))}</div><textarea className="w-full p-6 border-2 rounded-3xl h-32 outline-none focus:border-indigo-500" placeholder="Form Tutor Remark..." value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} /></div>)}
                 </div>
             ) : (<div className="h-full flex flex-col items-center justify-center text-slate-300"><CheckCircle size={80} className="mb-4 opacity-10"/><p className="font-black uppercase tracking-widest text-sm">Select a student</p></div>)}
         </div>
       </div>
-      {preview && (
-        <div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col p-4 backdrop-blur-md">
-          <div className="bg-white p-4 flex justify-between rounded-t-3xl border-b shadow-xl">
-            <button onClick={()=>setPreview(null)} className="text-red-500 font-black flex items-center gap-2"><X size={20}/> CLOSE</button>
-            <PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} />} fileName={`${selectedStudent?.name}_Result.pdf`} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs">Download</PDFDownloadLink>
-          </div>
-          <PDFViewer className="flex-1 rounded-b-3xl border-none"><ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} /></PDFViewer>
-        </div>
-      )}
+      {preview && (<div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col p-4 backdrop-blur-md"><div className="bg-white p-4 flex justify-between rounded-t-3xl border-b shadow-xl"><button onClick={()=>setPreview(null)} className="text-red-500 font-black flex items-center gap-2"><X size={20}/> CLOSE</button><PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} />} fileName={`${selectedStudent?.name}_Result.pdf`} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs">Download</PDFDownloadLink></div><PDFViewer className="flex-1 rounded-b-3xl border-none"><ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} /></PDFViewer></div>)}
     </div>
   );
 };
-
-// ==================== REST OF THE DASHBOARDS (ADMIN & AUTH) ====================
-// (No changes made to Admin, Central Admin, or Auth sections below)
 
 const AdminDashboard = ({ profile, onLogout }) => {
   const [school, setSchool] = useState({});
@@ -352,41 +304,41 @@ const AdminDashboard = ({ profile, onLogout }) => {
     await supabase.from('comments').update({ submission_status: 'approved', principal_comment: commentData.principal_comment }).eq('student_id', selectedStudent.id);
     alert("Approved!"); setSelectedStudent(null); await load();
   };
+  const onLogoUpload = async (e) => {
+    const file = e.target.files[0]; if(!file) return;
+    setLoading(true);
+    try {
+        const path = `logo-${Date.now()}`;
+        const { data, error } = await supabase.storage.from('school-logos').upload(path, file);
+        if(error) throw error;
+        const { data: { publicUrl } } = supabase.storage.from('school-logos').getPublicUrl(data.path);
+        await supabase.from('schools').update({ logo_url: publicUrl }).eq('id', school.id);
+        await load();
+    } catch (e) { alert(e.message); }
+    setLoading(false);
+  };
   return (
     <div className="flex h-screen bg-slate-50">
-      <div className="w-64 bg-slate-900 text-white p-6 flex flex-col">
+      <div className="w-64 bg-slate-900 text-white p-6 flex flex-col shrink-0">
         <h1 className="text-xl font-black mb-10 flex items-center gap-2"><Shield className="text-indigo-400"/> ADMIN</h1>
-        <button onClick={()=>setTab('review')} className={`p-4 text-left rounded-2xl mb-2 flex items-center gap-3 font-bold transition ${tab==='review' ? 'bg-indigo-600' : 'hover:bg-white/5'}`}><CheckCircle size={20}/> Approvals</button>
-        <button onClick={()=>setTab('setup')} className={`p-4 text-left rounded-2xl mb-2 flex items-center gap-3 font-bold transition ${tab==='setup' ? 'bg-indigo-600' : 'hover:bg-white/5'}`}><School size={20}/> Profile</button>
+        <button onClick={()=>setTab('review')} className={`p-4 text-left rounded-2xl mb-2 flex items-center gap-3 font-bold ${tab==='review' ? 'bg-indigo-600' : 'hover:bg-white/5'}`}><CheckCircle size={20}/> Approvals</button>
+        <button onClick={()=>setTab('setup')} className={`p-4 text-left rounded-2xl mb-2 flex items-center gap-3 font-bold ${tab==='setup' ? 'bg-indigo-600' : 'hover:bg-white/5'}`}><School size={20}/> Profile</button>
         <button onClick={onLogout} className="mt-auto p-4 flex items-center gap-3 text-red-400 font-bold"><LogOut size={20}/> Logout</button>
       </div>
       <div className="flex-1 p-10 overflow-y-auto">
-        {tab === 'setup' ? (
-          <div className="max-w-2xl bg-white p-10 rounded-3xl shadow-sm border mx-auto">
-            <h2 className="text-2xl font-black mb-6">School Profile</h2>
-            <div className="space-y-4">
-              <input className="w-full border-2 p-3 rounded-xl" placeholder="School Name" value={school.name || ''} onChange={(e)=>setSchool({...school, name: e.target.value})} />
-              <input className="w-full border-2 p-3 rounded-xl" placeholder="Address" value={school.address || ''} onChange={(e)=>setSchool({...school, address: e.target.value})} />
-              <input className="w-full border-2 p-3 rounded-xl" placeholder="Contact" value={school.contact_info || ''} onChange={(e)=>setSchool({...school, contact_info: e.target.value})} />
-              <button onClick={async ()=>{await supabase.from('schools').update(school).eq('id', school.id); alert("Updated!");}} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold">Save Changes</button>
-            </div>
+        {tab === 'setup' ? (<div className="max-w-2xl bg-white p-10 rounded-3xl border mx-auto"><h2 className="text-2xl font-black mb-6">School Profile</h2><div className="space-y-4">
+          <div className="flex items-center gap-6 p-4 bg-slate-50 rounded-2xl border-2 border-dashed">
+            {school.logo_url ? <img src={school.logo_url} className="h-16 w-16 object-contain" alt="logo"/> : <School size={32}/>}
+            <label className="flex-1 cursor-pointer"><span className="flex items-center gap-2 bg-white border p-3 rounded-xl font-black text-xs uppercase justify-center">{loading ? <Loader2 className="animate-spin"/> : <><Upload size={16}/> Logo</>}</span><input type="file" className="hidden" onChange={onLogoUpload} accept="image/*" /></label>
           </div>
-        ) : (
-          <div className="bg-white rounded-2xl border shadow-sm">
+          <input className="w-full border-2 p-3 rounded-xl" placeholder="School Name" value={school.name || ''} onChange={(e)=>setSchool({...school, name: e.target.value})} />
+          <button onClick={async ()=>{await supabase.from('schools').update(school).eq('id', school.id); alert("Updated!");}} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold">Save Changes</button>
+        </div></div>) : (<div className="bg-white rounded-2xl border shadow-sm">
             <div className="p-6 border-b font-black text-slate-700">Pending Approvals</div>
             {students.map(s => (<div key={s.id} onClick={async () => {const { data: co } = await supabase.from('comments').select('*').eq('student_id', s.id).maybeSingle(); setSelectedStudent(s); setCommentData(co || {}); }} className="p-6 border-b hover:bg-indigo-50 cursor-pointer flex justify-between items-center transition"><div><p className="font-bold">{s.name}</p><p className="text-[10px] uppercase text-slate-400">{s.classes?.name}</p></div><span className="text-indigo-600 font-bold text-xs">Review →</span></div>))}
-          </div>
-        )}
+          </div>)}
       </div>
-      {selectedStudent && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white p-8 rounded-3xl w-full max-w-xl">
-            <h3 className="text-xl font-black mb-4">Approval: {selectedStudent.name}</h3>
-            <textarea className="w-full border-2 p-4 h-40 rounded-xl mb-6 outline-none focus:border-indigo-500" placeholder="Principal's remark..." value={commentData.principal_comment || ''} onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})} />
-            <div className="flex gap-4"><button onClick={approve} className="flex-1 bg-indigo-600 text-white py-4 rounded-xl font-bold uppercase text-xs">Approve & Publish</button><button onClick={()=>setSelectedStudent(null)} className="px-6 font-bold text-slate-400 uppercase text-xs">Cancel</button></div>
-          </div>
-        </div>
-      )}
+      {selectedStudent && (<div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-3xl w-full max-w-xl"><h3 className="text-xl font-black mb-4">Approval: {selectedStudent.name}</h3><textarea className="w-full border-2 p-4 h-40 rounded-xl mb-6 outline-none focus:border-indigo-500" placeholder="Principal's remark..." value={commentData.principal_comment || ''} onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})} /><div className="flex gap-4"><button onClick={approve} className="flex-1 bg-indigo-600 text-white py-4 rounded-xl font-bold uppercase text-xs">Approve & Publish</button><button onClick={()=>setSelectedStudent(null)} className="px-6 font-bold text-slate-400 uppercase text-xs">Cancel</button></div></div></div>)}
     </div>
   );
 };
@@ -407,8 +359,8 @@ const CentralAdminDashboard = ({ onLogout }) => {
   };
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      <div className="flex justify-between items-center bg-slate-900 text-white p-6 rounded-2xl mb-8 shadow-xl"><h1 className="text-2xl font-black flex items-center gap-3"><Shield className="text-indigo-400"/> GLOBAL CORE</h1><button onClick={onLogout} className="bg-white/10 px-6 py-2 rounded-xl font-bold">Logout</button></div>
-      <div className="bg-white rounded-2xl shadow-sm border overflow-hidden"><table className="w-full text-left"><thead className="bg-slate-50 border-b text-[10px] font-black uppercase"><tr><th className="p-4">User</th><th>School</th><th>Role</th><th>Action</th></tr></thead><tbody>{users.map(u => (<tr key={u.id} className="border-b hover:bg-slate-50"><td className="p-4 font-bold">{u.full_name}</td><td>{u.schools?.name || 'None'}</td><td><span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase">{u.role}</span></td><td><button onClick={() => setSelectedUser(u)} className="p-2 text-indigo-600"><UserCog size={18}/></button></td></tr>))}</tbody></table></div>
+      <div className="flex justify-between items-center bg-slate-900 text-white p-6 rounded-2xl mb-8"><h1 className="text-2xl font-black flex items-center gap-3"><Shield className="text-indigo-400"/> GLOBAL CORE</h1><button onClick={onLogout} className="bg-white/10 px-6 py-2 rounded-xl font-bold">Logout</button></div>
+      <div className="bg-white rounded-2xl border overflow-hidden"><table className="w-full text-left"><thead className="bg-slate-50 border-b text-[10px] font-black uppercase"><tr><th className="p-4">User</th><th>School</th><th>Role</th><th>Action</th></tr></thead><tbody>{users.map(u => (<tr key={u.id} className="border-b hover:bg-slate-50"><td className="p-4 font-bold">{u.full_name}</td><td>{u.schools?.name || 'None'}</td><td><span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase">{u.role}</span></td><td><button onClick={() => setSelectedUser(u)} className="p-2 text-indigo-600"><UserCog size={18}/></button></td></tr>))}</tbody></table></div>
       {selectedUser && (<div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-3xl w-full max-sm"><h3 className="text-lg font-black mb-6 uppercase text-center">Manage Privileges</h3><div className="space-y-4"><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.role} onChange={(e) => updateStaff(selectedUser.id, { role: e.target.value })}><option value="teacher">Teacher</option><option value="admin">School Admin</option></select><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.school_id} onChange={(e) => updateStaff(selectedUser.id, { school_id: e.target.value })}><option value="">No School</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select><button onClick={() => setSelectedUser(null)} className="w-full py-4 text-slate-400 font-bold uppercase text-xs">Close</button></div></div></div>)}
     </div>
   );
@@ -435,7 +387,7 @@ const Auth = ({ onParent }) => {
           const { data: s } = await supabase.from('schools').insert([{ owner_id: user.id, name: form.name }]).select().single();
           await supabase.from('profiles').insert([{ id: user.id, full_name: form.name, role: 'admin', school_id: s.id }]);
         } else { await supabase.from('profiles').insert([{ id: user.id, full_name: form.name, role: 'teacher', school_id: form.schoolId }]); }
-        alert("Success! Verification required.");
+        alert("Verification required.");
       }
     } catch (err) { alert(err.message); }
     setLoading(false);
@@ -443,14 +395,14 @@ const Auth = ({ onParent }) => {
   return (
     <div className="min-h-screen bg-indigo-50 flex items-center justify-center p-4">
       <div className="bg-white p-10 rounded-[50px] shadow-2xl max-w-md w-full border-t-8 border-indigo-600">
-        <h1 className="text-3xl font-black text-center mb-10 text-indigo-600 tracking-tighter">SPRINGFORTH</h1>
-        <div className="flex gap-4 mb-8 border-b text-[10px] font-black uppercase pb-3 overflow-x-auto">{['login', 'school_reg', 'teacher_reg'].map(m => (<button key={m} onClick={() => setMode(m)} className={mode === m ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}>{m.replace('_',' ')}</button>))}</div>
+        <h1 className="text-3xl font-black text-center mb-10 text-indigo-600">SPRINGFORTH</h1>
+        <div className="flex gap-4 mb-8 border-b text-[10px] font-black uppercase overflow-x-auto">{['login', 'school_reg', 'teacher_reg'].map(m => (<button key={m} onClick={() => setMode(m)} className={mode === m ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}>{m.replace('_',' ')}</button>))}</div>
         <form onSubmit={submit} className="space-y-4">
-          {mode !== 'login' && <input className="w-full border-2 p-4 rounded-3xl outline-none" placeholder="Full Name" onChange={(e)=>setForm({...form, name: e.target.value})} required />}
-          <input className="w-full border-2 p-4 rounded-3xl outline-none" type="email" placeholder="Email" onChange={(e)=>setForm({...form, email: e.target.value})} required />
-          <input className="w-full border-2 p-4 rounded-3xl outline-none" type="password" placeholder="Password" onChange={(e)=>setForm({...form, password: e.target.value})} required />
-          {mode === 'teacher_reg' && (<select className="w-full border-2 p-4 rounded-3xl bg-white font-bold" value={form.schoolId} onChange={(e)=>setForm({...form, schoolId: e.target.value})} required><option value="">Select School</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>)}
-          <button className="w-full bg-indigo-600 text-white py-4 rounded-3xl font-black shadow-lg uppercase text-xs tracking-widest">{loading ? <Loader2 className="animate-spin mx-auto"/> : 'Enter Portal'}</button>
+          {mode !== 'login' && <input className="w-full border-2 p-4 rounded-3xl" placeholder="Full Name" onChange={(e)=>setForm({...form, name: e.target.value})} required />}
+          <input className="w-full border-2 p-4 rounded-3xl" type="email" placeholder="Email" onChange={(e)=>setForm({...form, email: e.target.value})} required />
+          <input className="w-full border-2 p-4 rounded-3xl" type="password" placeholder="Password" onChange={(e)=>setForm({...form, password: e.target.value})} required />
+          {mode === 'teacher_reg' && (<select className="w-full border-2 p-4 rounded-3xl" value={form.schoolId} onChange={(e)=>setForm({...form, schoolId: e.target.value})} required><option value="">Select School</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>)}
+          <button className="w-full bg-indigo-600 text-white py-4 rounded-3xl font-black uppercase text-xs">{loading ? <Loader2 className="animate-spin mx-auto"/> : 'Enter Portal'}</button>
         </form>
         <button onClick={onParent} className="w-full bg-slate-50 py-4 rounded-3xl mt-8 font-black uppercase text-slate-400 flex justify-center items-center gap-3"><Search size={18}/> Parent Gateway</button>
       </div>
@@ -470,7 +422,7 @@ const ParentPortal = ({ onBack }) => {
     setLoading(false);
   };
   if (data) return (<div className="fixed inset-0 z-50 bg-white flex flex-col"><button onClick={()=>setData(null)} className="p-6 bg-slate-900 text-white font-black flex items-center gap-3 text-xs uppercase">← Back</button><PDFViewer className="flex-1 border-none"><ResultPDF school={data.schools} student={data} results={data.results} comments={data.comments[0]} type="full" /></PDFViewer></div>);
-  return (<div className="min-h-screen bg-indigo-950 flex items-center justify-center p-4"><div className="bg-white p-12 rounded-[60px] shadow-2xl max-w-md w-full text-center"><GraduationCap size={70} className="mx-auto text-indigo-600 mb-6"/><h2 className="text-3xl font-black mb-10 text-slate-800 uppercase tracking-widest">Parent Portal</h2><input className="w-full border-2 p-5 rounded-[30px] mb-4 text-center font-black tracking-widest text-lg uppercase outline-none" placeholder="ADM-XXXX" onChange={(e)=>setId(e.target.value)} /><button onClick={lookup} className="w-full bg-indigo-600 text-white py-6 rounded-[30px] font-black uppercase text-xs">{loading ? <Loader2 className="animate-spin mx-auto"/> : 'Access Transcript'}</button><button onClick={onBack} className="mt-8 text-slate-400 text-xs font-black uppercase">Staff Login</button></div></div>);
+  return (<div className="min-h-screen bg-indigo-950 flex items-center justify-center p-4"><div className="bg-white p-12 rounded-[60px] max-w-md w-full text-center"><GraduationCap size={70} className="mx-auto text-indigo-600 mb-6"/><h2 className="text-3xl font-black mb-10 text-slate-800 uppercase">Parent Portal</h2><input className="w-full border-2 p-5 rounded-[30px] mb-4 text-center font-black" placeholder="ADM-XXXX" onChange={(e)=>setId(e.target.value)} /><button onClick={lookup} className="w-full bg-indigo-600 text-white py-6 rounded-[30px] font-black uppercase text-xs">{loading ? <Loader2 className="animate-spin mx-auto"/> : 'Access Transcript'}</button><button onClick={onBack} className="mt-8 text-slate-400 text-xs font-black uppercase">Staff Login</button></div></div>);
 };
 
 const App = () => {
