@@ -1,3 +1,5 @@
+--- START OF FILE Paste March 13, 2026 - 12:56AM ---
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink, Image, pdf } from '@react-pdf/renderer';
@@ -203,8 +205,6 @@ const TeacherDashboard = () => {
     const { data: co } = await supabase.from('comments').select('*').eq('student_id', s.id).maybeSingle();
     setCurrentResults(rs || []);
     setScores(rs?.reduce((a, r) => ({ ...a, [r.subject_id]: r.scores }), {}) || {});
-    
-    // BACKUP: If columns missing from table, pull from behaviors JSON
     setCommentData(co ? {
         ...co,
         behaviors: co.behaviors || {},
@@ -223,35 +223,19 @@ const TeacherDashboard = () => {
         });
         await supabase.from('results').delete().eq('student_id', selectedStudent.id);
         await supabase.from('results').insert(ups);
-        
-        // FIX: Store attendance inside the behaviors object to bypass missing schema columns
-        const finalBehaviors = {
-            ...(commentData.behaviors || {}),
-            total_days: commentData.total_days,
-            present: commentData.present,
-            absent: commentData.absent
-        };
-
-        const commentPayload = { 
-            student_id: selectedStudent.id, 
-            school_id: school.id, 
-            tutor_comment: commentData.tutor_comment || '', 
-            behaviors: finalBehaviors, 
-            submission_status: 'pending' 
-        };
-        
+        const finalBehaviors = { ...(commentData.behaviors || {}), total_days: commentData.total_days, present: commentData.present, absent: commentData.absent };
+        const commentPayload = { student_id: selectedStudent.id, school_id: school.id, tutor_comment: commentData.tutor_comment || '', behaviors: finalBehaviors, submission_status: 'pending' };
         if (commentData.id) commentPayload.id = commentData.id;
-        
         const { error } = await supabase.from('comments').upsert(commentPayload, { onConflict: 'student_id' });
         if (error) throw error;
-        
-        alert("Saved Successfully!"); 
-        await selectStu(selectedStudent);
+        alert("Saved Successfully!"); await selectStu(selectedStudent);
     } catch (e) { alert("Error saving: " + e.message); }
   };
 
   const downloadWholeSchoolZip = async () => {
     if (!school?.id) return;
+    const choice = window.confirm("Download FULL TERM reports? (Click 'Cancel' for MID-TERM reports)");
+    const zipType = choice ? 'full' : 'mid';
     setIsZipping(true);
     try {
       const zip = new JSZip();
@@ -263,11 +247,11 @@ const TeacherDashboard = () => {
         const studentResults = allRes.filter(r => r.student_id === student.id);
         const studentComments = allCom.find(c => c.student_id === student.id) || { behaviors: {} };
         const className = student.classes?.name || 'General';
-        const blob = await pdf(<ResultPDF school={school} student={student} results={studentResults} comments={studentComments} type="mid" />).toBlob();
+        const blob = await pdf(<ResultPDF school={school} student={student} results={studentResults} comments={studentComments} type={zipType} />).toBlob();
         zip.folder(className).file(`${student.name.replace(/\s+/g, '_')}_Result.pdf`, blob);
       }
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `${school.name.replace(/\s+/g, '_')}_Reports.zip`);
+      saveAs(content, `${school.name.replace(/\s+/g, '_')}_${zipType.toUpperCase()}_Reports.zip`);
     } catch (err) { alert("ZIP Error: " + err.message); } finally { setIsZipping(false); }
   };
 
