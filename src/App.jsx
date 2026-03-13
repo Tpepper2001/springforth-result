@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink, Image, pdf } from '@react-pdf/renderer';
@@ -26,20 +25,31 @@ const getGrade = (score, max) => {
 
 const getTutorRemark = (avg) => {
     const s = parseFloat(avg);
-    if (s >= 80) return "An exceptionally brilliant performance. Keep up the high standard.";
-    if (s >= 70) return "A very good result. Your diligence is reflected in your grades.";
-    if (s >= 60) return "A good performance. You have the potential to do even better.";
-    if (s >= 50) return "A fair result. More focus is needed in your core subjects.";
-    return "A weak performance. You must put in more effort next term.";
+    if (s >= 85) return "An exceptionally brilliant performance! Keep up the high standard of excellence!";
+    if (s >= 80) return "Excellent results! Your hard work and dedication are truly paying off!";
+    if (s >= 75) return "A stellar performance! You have shown remarkable focus this term!";
+    if (s >= 70) return "A very good result! Your diligence is reflected in these impressive grades!";
+    if (s >= 65) return "A strong academic showing! Your commitment to learning is clear!";
+    if (s >= 60) return "A good performance! You have the potential to reach even greater heights!";
+    if (s >= 55) return "A satisfactory result! Focus more on your strengths to boost your scores!";
+    if (s >= 50) return "A fair result! More focus and discipline are needed in your core subjects!";
+    if (s >= 45) return "An average performance! You must strive for a more consistent study habit!";
+    if (s >= 40) return "A weak performance! Significant improvement is needed in your weak areas!";
+    return "A very poor result! You must put in much more effort to succeed next term!";
 };
 
 const getPrincipalRemark = (avg) => {
     const s = parseFloat(avg);
-    if (s >= 80) return "Excellent academic standing. A very promising student.";
-    if (s >= 70) return "Very impressive results. Maintain this momentum.";
-    if (s >= 60) return "Good work. There is still room for improvement to reach the top.";
-    if (s >= 50) return "Passable. You are encouraged to study harder and seek help where needed.";
-    return "Poor performance. Urgent academic intervention is required.";
+    if (s >= 85) return "Outstanding academic leadership! You are a role model for your peers!";
+    if (s >= 80) return "Excellent academic standing! A very promising and talented student!";
+    if (s >= 75) return "Highly commendable results! You are a great credit to this institution!";
+    if (s >= 70) return "Very impressive results! Maintain this momentum and aim for the top!";
+    if (s >= 65) return "Good progress! I am pleased with your academic growth this term!";
+    if (s >= 60) return "Good work! There is still room for improvement to reach the peak!";
+    if (s >= 55) return "Steady progress! Keep pushing yourself to exceed your current limits!";
+    if (s >= 50) return "Passable! You are encouraged to study harder and seek help where needed!";
+    if (s >= 40) return "Below expectations! Urgent academic intervention and focus are required!";
+    return "Poor performance! A drastic change in attitude toward your studies is needed!";
 };
 
 // ==================== PDF STYLES ====================
@@ -80,8 +90,8 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
   const avg = results?.length > 0 ? ((totalScore / possible) * 100).toFixed(1) : 0;
   const isApproved = comments?.submission_status === 'approved';
 
-  const finalTutorRemark = comments?.tutor_comment || getTutorRemark(avg);
-  const finalPrincipalRemark = comments?.principal_comment || getPrincipalRemark(avg);
+  const finalTutorRemark = (comments?.tutor_comment || getTutorRemark(avg));
+  const finalPrincipalRemark = (comments?.principal_comment || getPrincipalRemark(avg));
 
   return (
     <Document>
