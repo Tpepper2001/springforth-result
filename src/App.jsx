@@ -1,3 +1,5 @@
+--- START OF FILE Paste March 13, 2026 - 12:56AM ---
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink, Image, pdf } from '@react-pdf/renderer';
@@ -204,7 +206,15 @@ const TeacherDashboard = () => {
     const { data: co } = await supabase.from('comments').select('*').eq('student_id', s.id).maybeSingle();
     setCurrentResults(rs || []);
     setScores(rs?.reduce((a, r) => ({ ...a, [r.subject_id]: r.scores }), {}) || {});
-    setCommentData(co || { behaviors: {}, submission_status: 'draft', total_days: '', present: '', absent: '' });
+    // Sanitizing the fetched data to ensure null columns from DB don't break the local state structure
+    setCommentData(co ? {
+        ...co,
+        behaviors: co.behaviors || {},
+        total_days: co.total_days || '',
+        present: co.present || '',
+        absent: co.absent || '',
+        submission_status: co.submission_status || 'draft'
+    } : { behaviors: {}, submission_status: 'draft', total_days: '', present: '', absent: '' });
   };
 
   const saveResults = async () => {
@@ -215,10 +225,25 @@ const TeacherDashboard = () => {
         });
         await supabase.from('results').delete().eq('student_id', selectedStudent.id);
         await supabase.from('results').insert(ups);
-        const commentPayload = { student_id: selectedStudent.id, school_id: school.id, tutor_comment: commentData.tutor_comment, behaviors: commentData.behaviors, total_days: commentData.total_days, present: commentData.present, absent: commentData.absent, submission_status: 'pending' };
+        
+        // Ensure the payload explicitly contains values to prevent them from being lost in upsert
+        const commentPayload = { 
+            student_id: selectedStudent.id, 
+            school_id: school.id, 
+            tutor_comment: commentData.tutor_comment || '', 
+            behaviors: commentData.behaviors || {}, 
+            total_days: commentData.total_days || '', 
+            present: commentData.present || '', 
+            absent: commentData.absent || '', 
+            submission_status: 'pending' 
+        };
         if (commentData.id) commentPayload.id = commentData.id;
-        await supabase.from('comments').upsert(commentPayload, { onConflict: 'student_id' });
-        alert("Saved Successfully!"); selectStu(selectedStudent);
+        
+        const { error } = await supabase.from('comments').upsert(commentPayload, { onConflict: 'student_id' });
+        if (error) throw error;
+        
+        alert("Saved Successfully!"); 
+        await selectStu(selectedStudent);
     } catch (e) { alert("Error saving: " + e.message); }
   };
 
