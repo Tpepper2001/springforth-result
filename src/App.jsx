@@ -1,4 +1,3 @@
---- START OF FILE Paste March 13, 2026 - 12:56AM ---
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
