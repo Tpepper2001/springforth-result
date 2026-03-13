@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink, Image, pdf } from '@react-pdf/renderer';
@@ -101,13 +100,13 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Student</Text><Text style={pdfStyles.value}>{student?.name}</Text></View>
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Adm No</Text><Text style={pdfStyles.value}>{student?.admission_no}</Text></View>
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Class</Text><Text style={pdfStyles.value}>{student?.classes?.name || '---'}</Text></View>
-            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Days Open</Text><Text style={pdfStyles.value}>{comments?.total_days || '---'}</Text></View>
+            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Days Open</Text><Text style={pdfStyles.value}>{comments?.total_days || comments?.behaviors?.total_days || '---'}</Text></View>
           </View>
           <View style={pdfStyles.bioBox}>
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Average</Text><Text style={pdfStyles.value}>{avg}%</Text></View>
             <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Grade</Text><Text style={pdfStyles.value}>{getGrade(totalScore, possible).g}</Text></View>
-            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Times Present</Text><Text style={pdfStyles.value}>{comments?.present || '---'}</Text></View>
-            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Times Absent</Text><Text style={pdfStyles.value}>{comments?.absent || '---'}</Text></View>
+            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Times Present</Text><Text style={pdfStyles.value}>{comments?.present || comments?.behaviors?.present || '---'}</Text></View>
+            <View style={pdfStyles.bioRow}><Text style={pdfStyles.label}>Times Absent</Text><Text style={pdfStyles.value}>{comments?.absent || comments?.behaviors?.absent || '---'}</Text></View>
           </View>
         </View>
 
@@ -182,7 +181,6 @@ const TeacherDashboard = () => {
   const [isZipping, setIsZipping] = useState(false);
 
   const init = useCallback(async () => {
-    // Without auth, we fetch the first school available
     const { data: schools } = await supabase.from('schools').select('*').limit(1);
     if (!schools || schools.length === 0) return;
     const s = schools[0];
@@ -205,13 +203,14 @@ const TeacherDashboard = () => {
     const { data: co } = await supabase.from('comments').select('*').eq('student_id', s.id).maybeSingle();
     setCurrentResults(rs || []);
     setScores(rs?.reduce((a, r) => ({ ...a, [r.subject_id]: r.scores }), {}) || {});
-    // Sanitizing the fetched data to ensure null columns from DB don't break the local state structure
+    
+    // BACKUP: If columns missing from table, pull from behaviors JSON
     setCommentData(co ? {
         ...co,
         behaviors: co.behaviors || {},
-        total_days: co.total_days || '',
-        present: co.present || '',
-        absent: co.absent || '',
+        total_days: co.total_days || co.behaviors?.total_days || '',
+        present: co.present || co.behaviors?.present || '',
+        absent: co.absent || co.behaviors?.absent || '',
         submission_status: co.submission_status || 'draft'
     } : { behaviors: {}, submission_status: 'draft', total_days: '', present: '', absent: '' });
   };
@@ -225,17 +224,22 @@ const TeacherDashboard = () => {
         await supabase.from('results').delete().eq('student_id', selectedStudent.id);
         await supabase.from('results').insert(ups);
         
-        // Ensure the payload explicitly contains values to prevent them from being lost in upsert
+        // FIX: Store attendance inside the behaviors object to bypass missing schema columns
+        const finalBehaviors = {
+            ...(commentData.behaviors || {}),
+            total_days: commentData.total_days,
+            present: commentData.present,
+            absent: commentData.absent
+        };
+
         const commentPayload = { 
             student_id: selectedStudent.id, 
             school_id: school.id, 
             tutor_comment: commentData.tutor_comment || '', 
-            behaviors: commentData.behaviors || {}, 
-            total_days: commentData.total_days || '', 
-            present: commentData.present || '', 
-            absent: commentData.absent || '', 
+            behaviors: finalBehaviors, 
             submission_status: 'pending' 
         };
+        
         if (commentData.id) commentPayload.id = commentData.id;
         
         const { error } = await supabase.from('comments').upsert(commentPayload, { onConflict: 'student_id' });
