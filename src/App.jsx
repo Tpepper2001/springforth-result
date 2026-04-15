@@ -11,7 +11,6 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==================== SUPABASE HEARTBEAT ====================
-// Pings every 4 minutes to prevent free-tier auto-pause
 const useSupabaseHeartbeat = () => {
   useEffect(() => {
     const beat = async () => {
@@ -19,8 +18,8 @@ const useSupabaseHeartbeat = () => {
         await supabase.from('schools').select('id').limit(1);
       } catch (_) {}
     };
-    beat(); // immediate ping on mount
-    const interval = setInterval(beat, 4 * 60 * 1000); // every 4 min
+    beat();
+    const interval = setInterval(beat, 4 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 };
@@ -224,19 +223,8 @@ const TeacherDashboard = () => {
 
   useEffect(() => { init(); }, [init]);
 
-  // Re-load student data when term switches
-  useEffect(() => {
-    if (selectedStudent) selectStu(selectedStudent);
-  }, [term]);
-
-  const loadClass = async (id) => {
-    setSelectedClassId(id);
-    const { data: st } = await supabase.from('students').select('*, classes(name)').eq('class_id', id);
-    const { data: sub } = await supabase.from('subjects').select('*').eq('class_id', id);
-    setStudents(st || []); setSubjects(sub || []); setSelectedStudent(null);
-  };
-
-  const selectStu = async (s) => {
+  // selectStu as useCallback so the term-reload effect can list it as a dependency
+  const selectStu = useCallback(async (s) => {
     setSelectedStudent(s); setSide(false);
     const { data: rs } = await supabase.from('results').select('*, subjects(name)').eq('student_id', s.id).eq('term', term);
     const { data: co } = await supabase.from('comments').select('*').eq('student_id', s.id).eq('term', term).maybeSingle();
@@ -250,6 +238,19 @@ const TeacherDashboard = () => {
       absent: co.absent || co.behaviors?.absent || '',
       submission_status: co.submission_status || 'draft'
     } : { behaviors: {}, submission_status: 'draft', total_days: '', present: '', absent: '' });
+  }, [term]);
+
+  // Re-load student data when term switches
+  useEffect(() => {
+    if (selectedStudent) selectStu(selectedStudent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [term]); // intentionally only re-runs on term change, not on every selectStu/selectedStudent update
+
+  const loadClass = async (id) => {
+    setSelectedClassId(id);
+    const { data: st } = await supabase.from('students').select('*, classes(name)').eq('class_id', id);
+    const { data: sub } = await supabase.from('subjects').select('*').eq('class_id', id);
+    setStudents(st || []); setSubjects(sub || []); setSelectedStudent(null);
   };
 
   const saveResults = async () => {
@@ -667,7 +668,6 @@ const App = () => {
   const [view, setView] = useState('teacher');
   const [term, setTerm] = useState('term2');
 
-  // 💓 Supabase heartbeat — prevents free-tier auto-pause
   useSupabaseHeartbeat();
 
   return (
@@ -678,7 +678,6 @@ const App = () => {
           <button onClick={() => setView('admin')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition ${view === 'admin' ? 'bg-white text-indigo-600 shadow-md' : 'text-white hover:bg-white/10'}`}><Shield size={14} /> Admin</button>
           <button onClick={() => setView('central')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition ${view === 'central' ? 'bg-white text-indigo-600 shadow-md' : 'text-white hover:bg-white/10'}`}><LayoutDashboard size={14} /> Global</button>
           <button onClick={() => setView('parent')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition ${view === 'parent' ? 'bg-white text-indigo-600 shadow-md' : 'text-white hover:bg-white/10'}`}><Search size={14} /> Parent Gateway</button>
-          {/* Term switcher — hidden on parent portal since it picks its own */}
           {view !== 'parent' && <TermSwitcher term={term} setTerm={setTerm} />}
         </nav>
         <main className="flex-1">
