@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink, Image, pdf } from '@react-pdf/renderer';
 import { Loader2, School, Users, CheckCircle, Search, Menu, X, Upload, Shield, UserCog, Plus, BookOpen, Trash2, GraduationCap, Archive, LayoutDashboard } from 'lucide-react';
@@ -6,14 +6,36 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
 // ==================== CONFIGURATION ====================
-const supabaseUrl = 'https://ghlnenmfwlpwlqdrbean.supabase.co'; 
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdobG5lbm1md2xwd2xxZHJiZWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0MTE0MDQsImV4cCI6MjA3OTk4NzQwNH0.rNILUdI035c4wl4kFkZFP4OcIM_t7bNMqktKm25d5Gg'; 
+const supabaseUrl = 'https://ghlnenmfwlpwlqdrbean.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdobG5lbm1md2xwd2xxZHJiZWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0MTE0MDQsImV4cCI6MjA3OTk4NzQwNH0.rNILUdI035c4wl4kFkZFP4OcIM_t7bNMqktKm25d5Gg';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// ==================== SUPABASE HEARTBEAT ====================
+// Pings every 4 minutes to prevent free-tier auto-pause
+const useSupabaseHeartbeat = () => {
+  useEffect(() => {
+    const beat = async () => {
+      try {
+        await supabase.from('schools').select('id').limit(1);
+      } catch (_) {}
+    };
+    beat(); // immediate ping on mount
+    const interval = setInterval(beat, 4 * 60 * 1000); // every 4 min
+    return () => clearInterval(interval);
+  }, []);
+};
+
+// ==================== TERM CONTEXT ====================
+const TermContext = createContext({ term: 'term2', setTerm: () => {} });
+const useTerm = () => useContext(TermContext);
+
+const TERM_LABELS = { term2: '2nd Term', term3: '3rd Term' };
+
+// ==================== CONSTANTS ====================
 const BEHAVIORS = ['RESPECT', 'RESPONSIBILITY', 'EMPATHY', 'SELF DISCIPLINE', 'COOPERATION', 'LEADERSHIP', 'HONESTY'];
 const RATINGS = ['5', '4', '3', '2', '1'];
 
-// ==================== AUTOMATIC REMARK LOGIC ====================
+// ==================== GRADING ====================
 const getGrade = (score, max) => {
   const percent = (score / max) * 100;
   if (percent >= 80) return { g: 'A', r: 'Excellent' };
@@ -24,32 +46,32 @@ const getGrade = (score, max) => {
 };
 
 const getTutorRemark = (avg) => {
-    const s = parseFloat(avg);
-    if (s >= 85) return "An exceptionally brilliant performance! Keep up the high standard of excellence!";
-    if (s >= 80) return "Excellent results! Your hard work and dedication are truly paying off!";
-    if (s >= 75) return "A stellar performance! You have shown remarkable focus this term!";
-    if (s >= 70) return "A very good result! Your diligence is reflected in these impressive grades!";
-    if (s >= 65) return "A strong academic showing! Your commitment to learning is clear!";
-    if (s >= 60) return "A good performance! You have the potential to reach even greater heights!";
-    if (s >= 55) return "A satisfactory result! Focus more on your strengths to boost your scores!";
-    if (s >= 50) return "A fair result! More focus and discipline are needed in your core subjects!";
-    if (s >= 45) return "An average performance! You must strive for a more consistent study habit!";
-    if (s >= 40) return "A weak performance! Significant improvement is needed in your weak areas!";
-    return "A very poor result! You must put in much more effort to succeed next term!";
+  const s = parseFloat(avg);
+  if (s >= 85) return "An exceptionally brilliant performance! Keep up the high standard of excellence!";
+  if (s >= 80) return "Excellent results! Your hard work and dedication are truly paying off!";
+  if (s >= 75) return "A stellar performance! You have shown remarkable focus this term!";
+  if (s >= 70) return "A very good result! Your diligence is reflected in these impressive grades!";
+  if (s >= 65) return "A strong academic showing! Your commitment to learning is clear!";
+  if (s >= 60) return "A good performance! You have the potential to reach even greater heights!";
+  if (s >= 55) return "A satisfactory result! Focus more on your strengths to boost your scores!";
+  if (s >= 50) return "A fair result! More focus and discipline are needed in your core subjects!";
+  if (s >= 45) return "An average performance! You must strive for a more consistent study habit!";
+  if (s >= 40) return "A weak performance! Significant improvement is needed in your weak areas!";
+  return "A very poor result! You must put in much more effort to succeed next term!";
 };
 
 const getPrincipalRemark = (avg) => {
-    const s = parseFloat(avg);
-    if (s >= 85) return "Outstanding academic leadership! You are a role model for your peers!";
-    if (s >= 80) return "Excellent academic standing! A very promising and talented student!";
-    if (s >= 75) return "Highly commendable results! You are a great credit to this institution!";
-    if (s >= 70) return "Very impressive results! Maintain this momentum and aim for the top!";
-    if (s >= 65) return "Good progress! I am pleased with your academic growth this term!";
-    if (s >= 60) return "Good work! There is still room for improvement to reach the peak!";
-    if (s >= 55) return "Steady progress! Keep pushing yourself to exceed your current limits!";
-    if (s >= 50) return "Passable! You are encouraged to study harder and seek help where needed!";
-    if (s >= 40) return "Below expectations! Urgent academic intervention and focus are required!";
-    return "Poor performance! A drastic change in attitude toward your studies is needed!";
+  const s = parseFloat(avg);
+  if (s >= 85) return "Outstanding academic leadership! You are a role model for your peers!";
+  if (s >= 80) return "Excellent academic standing! A very promising and talented student!";
+  if (s >= 75) return "Highly commendable results! You are a great credit to this institution!";
+  if (s >= 70) return "Very impressive results! Maintain this momentum and aim for the top!";
+  if (s >= 65) return "Good progress! I am pleased with your academic growth this term!";
+  if (s >= 60) return "Good work! There is still room for improvement to reach the peak!";
+  if (s >= 55) return "Steady progress! Keep pushing yourself to exceed your current limits!";
+  if (s >= 50) return "Passable! You are encouraged to study harder and seek help where needed!";
+  if (s >= 40) return "Below expectations! Urgent academic intervention and focus are required!";
+  return "Poor performance! A drastic change in attitude toward your studies is needed!";
 };
 
 // ==================== PDF STYLES ====================
@@ -83,13 +105,12 @@ const pdfStyles = StyleSheet.create({
   footnote: { fontSize: 6, color: '#ef4444', textAlign: 'center', marginTop: 15, fontStyle: 'italic' }
 });
 
-const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) => {
+const ResultPDF = ({ school, student, results = [], comments, type = 'full', termLabel = '2nd Term' }) => {
   const isMid = type === 'mid';
   const totalScore = results.reduce((acc, r) => acc + (parseFloat(isMid ? r.scores?.ca : r.total) || 0), 0);
   const possible = (results?.length || 0) * (isMid ? 40 : 100);
   const avg = results?.length > 0 ? ((totalScore / possible) * 100).toFixed(1) : 0;
   const isApproved = comments?.submission_status === 'approved';
-
   const finalTutorRemark = (comments?.tutor_comment || getTutorRemark(avg));
   const finalPrincipalRemark = (comments?.principal_comment || getPrincipalRemark(avg));
 
@@ -102,7 +123,9 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
             <Text style={pdfStyles.schoolName}>{school?.name?.toUpperCase() || 'SPRINGFORTH ACADEMY'}</Text>
             <Text style={pdfStyles.subHeader}>{school?.address || 'Address Not Configured'}</Text>
             <Text style={pdfStyles.subHeader}>{school?.contact_info || 'Contact Not Configured'}</Text>
-            <Text style={pdfStyles.reportBadge}>{isMid ? 'MID-TERM CA REPORT' : 'TERMINAL ACADEMIC REPORT'}</Text>
+            <Text style={pdfStyles.reportBadge}>
+              {isMid ? `MID-TERM CA REPORT — ${termLabel.toUpperCase()}` : `TERMINAL ACADEMIC REPORT — ${termLabel.toUpperCase()}`}
+            </Text>
           </View>
         </View>
 
@@ -158,7 +181,6 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
           <Text style={pdfStyles.remarksHeader}>Form Tutor's Remark</Text>
           <Text style={pdfStyles.remarksText}>{finalTutorRemark}</Text>
         </View>
-
         <View style={pdfStyles.remarksBox}>
           <Text style={pdfStyles.remarksHeader}>Principal's Remark</Text>
           <Text style={pdfStyles.remarksText}>{finalPrincipalRemark}</Text>
@@ -168,7 +190,7 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
           <View style={pdfStyles.sigLine}><Text style={pdfStyles.sigText}>Form Tutor</Text></View>
           <View style={pdfStyles.sigLine}><Text style={pdfStyles.sigText}>Principal</Text></View>
         </View>
-        
+
         {!isApproved && <Text style={pdfStyles.footnote}>* result not approved</Text>}
       </Page>
     </Document>
@@ -177,6 +199,7 @@ const ResultPDF = ({ school, student, results = [], comments, type = 'full' }) =
 
 // ==================== TEACHER DASHBOARD ====================
 const TeacherDashboard = () => {
+  const { term } = useTerm();
   const [school, setSchool] = useState(null);
   const [classList, setClassList] = useState([]);
   const [selectedClassId, setSelectedClassId] = useState('');
@@ -201,6 +224,11 @@ const TeacherDashboard = () => {
 
   useEffect(() => { init(); }, [init]);
 
+  // Re-load student data when term switches
+  useEffect(() => {
+    if (selectedStudent) selectStu(selectedStudent);
+  }, [term]);
+
   const loadClass = async (id) => {
     setSelectedClassId(id);
     const { data: st } = await supabase.from('students').select('*, classes(name)').eq('class_id', id);
@@ -210,34 +238,47 @@ const TeacherDashboard = () => {
 
   const selectStu = async (s) => {
     setSelectedStudent(s); setSide(false);
-    const { data: rs } = await supabase.from('results').select('*, subjects(name)').eq('student_id', s.id);
-    const { data: co } = await supabase.from('comments').select('*').eq('student_id', s.id).maybeSingle();
+    const { data: rs } = await supabase.from('results').select('*, subjects(name)').eq('student_id', s.id).eq('term', term);
+    const { data: co } = await supabase.from('comments').select('*').eq('student_id', s.id).eq('term', term).maybeSingle();
     setCurrentResults(rs || []);
     setScores(rs?.reduce((a, r) => ({ ...a, [r.subject_id]: r.scores }), {}) || {});
     setCommentData(co ? {
-        ...co,
-        behaviors: co.behaviors || {},
-        total_days: co.total_days || co.behaviors?.total_days || '',
-        present: co.present || co.behaviors?.present || '',
-        absent: co.absent || co.behaviors?.absent || '',
-        submission_status: co.submission_status || 'draft'
+      ...co,
+      behaviors: co.behaviors || {},
+      total_days: co.total_days || co.behaviors?.total_days || '',
+      present: co.present || co.behaviors?.present || '',
+      absent: co.absent || co.behaviors?.absent || '',
+      submission_status: co.submission_status || 'draft'
     } : { behaviors: {}, submission_status: 'draft', total_days: '', present: '', absent: '' });
   };
 
   const saveResults = async () => {
     try {
-        const ups = subjects.map(s => {
-          const sc = scores[s.id] || { ca: 0, exam: 0 };
-          return { student_id: selectedStudent.id, subject_id: s.id, scores: sc, total: (parseFloat(sc.ca)||0) + (parseFloat(sc.exam)||0) };
-        });
-        await supabase.from('results').delete().eq('student_id', selectedStudent.id);
-        await supabase.from('results').insert(ups);
-        const finalBehaviors = { ...(commentData.behaviors || {}), total_days: commentData.total_days, present: commentData.present, absent: commentData.absent };
-        const commentPayload = { student_id: selectedStudent.id, school_id: school.id, tutor_comment: commentData.tutor_comment || '', behaviors: finalBehaviors, submission_status: 'pending' };
-        if (commentData.id) commentPayload.id = commentData.id;
-        const { error } = await supabase.from('comments').upsert(commentPayload, { onConflict: 'student_id' });
-        if (error) throw error;
-        alert("Saved Successfully!"); await selectStu(selectedStudent);
+      const ups = subjects.map(s => {
+        const sc = scores[s.id] || { ca: 0, exam: 0 };
+        return {
+          student_id: selectedStudent.id,
+          subject_id: s.id,
+          term,
+          scores: sc,
+          total: (parseFloat(sc.ca) || 0) + (parseFloat(sc.exam) || 0)
+        };
+      });
+      await supabase.from('results').delete().eq('student_id', selectedStudent.id).eq('term', term);
+      await supabase.from('results').insert(ups);
+      const finalBehaviors = { ...(commentData.behaviors || {}), total_days: commentData.total_days, present: commentData.present, absent: commentData.absent };
+      const commentPayload = {
+        student_id: selectedStudent.id,
+        school_id: school.id,
+        term,
+        tutor_comment: commentData.tutor_comment || '',
+        behaviors: finalBehaviors,
+        submission_status: 'pending'
+      };
+      if (commentData.id) commentPayload.id = commentData.id;
+      const { error } = await supabase.from('comments').upsert(commentPayload, { onConflict: 'student_id,term' });
+      if (error) throw error;
+      alert("Saved Successfully!"); await selectStu(selectedStudent);
     } catch (e) { alert("Error saving: " + e.message); }
   };
 
@@ -250,61 +291,167 @@ const TeacherDashboard = () => {
       const zip = new JSZip();
       const { data: allSt } = await supabase.from('students').select('*, classes(name)').eq('school_id', school.id);
       const stIds = allSt.map(s => s.id);
-      const { data: allRes } = await supabase.from('results').select('*, subjects(*)').in('student_id', stIds);
-      const { data: allCom } = await supabase.from('comments').select('*').in('student_id', stIds);
+      const { data: allRes } = await supabase.from('results').select('*, subjects(*)').in('student_id', stIds).eq('term', term);
+      const { data: allCom } = await supabase.from('comments').select('*').in('student_id', stIds).eq('term', term);
       for (const student of allSt) {
         const studentResults = allRes.filter(r => r.student_id === student.id);
         const studentComments = allCom.find(c => c.student_id === student.id) || { behaviors: {} };
         const className = student.classes?.name || 'General';
-        const blob = await pdf(<ResultPDF school={school} student={student} results={studentResults} comments={studentComments} type={zipType} />).toBlob();
+        const blob = await pdf(
+          <ResultPDF school={school} student={student} results={studentResults} comments={studentComments} type={zipType} termLabel={TERM_LABELS[term]} />
+        ).toBlob();
         zip.folder(className).file(`${student.name.replace(/\s+/g, '_')}_Result.pdf`, blob);
       }
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `${school.name.replace(/\s+/g, '_')}_${zipType.toUpperCase()}_Reports.zip`);
+      saveAs(content, `${school.name.replace(/\s+/g, '_')}_${TERM_LABELS[term].replace(' ', '_')}_${zipType.toUpperCase()}_Reports.zip`);
     } catch (err) { alert("ZIP Error: " + err.message); } finally { setIsZipping(false); }
   };
 
   return (
     <div className="flex h-screen bg-slate-50">
       <div className={`fixed lg:static inset-y-0 left-0 w-72 bg-indigo-950 text-white p-6 transition-transform z-40 flex flex-col ${side ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
-        <div className="flex justify-between items-center mb-8 shrink-0"><h1 className="text-xl font-black text-indigo-300 flex items-center gap-2"><School/> TEACHER</h1><button onClick={()=>setSide(false)} className="lg:hidden"><X/></button></div>
-        <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400 shrink-0"><span>Classes</span><button onClick={async ()=>{const n = prompt("Enter Class Name:"); if(!n) return; const { error } = await supabase.from('classes').insert({ name: n, school_id: school.id }); if(error) alert(error.message); else await init();}}><Plus size={14}/></button></div>
+        <div className="flex justify-between items-center mb-4 shrink-0">
+          <h1 className="text-xl font-black text-indigo-300 flex items-center gap-2"><School /> TEACHER</h1>
+          <button onClick={() => setSide(false)} className="lg:hidden"><X /></button>
+        </div>
+        <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400 shrink-0">
+          <span>Classes</span>
+          <button onClick={async () => { const n = prompt("Enter Class Name:"); if (!n) return; const { error } = await supabase.from('classes').insert({ name: n, school_id: school.id }); if (error) alert(error.message); else await init(); }}><Plus size={14} /></button>
+        </div>
         <div className="space-y-1 mb-8 overflow-y-auto flex-1 border-b border-white/10 pb-4">
-            {classList.map(c => (<div key={c.id} className="flex items-center justify-between group"><button onClick={()=>loadClass(c.id)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedClassId === c.id ? 'bg-indigo-600' : 'hover:bg-white/5'}`}>{c.name}</button><button onClick={async ()=>{if(window.confirm("Delete Class?")){await supabase.from('classes').delete().eq('id', c.id); await init();}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}
+          {classList.map(c => (
+            <div key={c.id} className="flex items-center justify-between group">
+              <button onClick={() => loadClass(c.id)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedClassId === c.id ? 'bg-indigo-600' : 'hover:bg-white/5'}`}>{c.name}</button>
+              <button onClick={async () => { if (window.confirm("Delete Class?")) { await supabase.from('classes').delete().eq('id', c.id); await init(); } }} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14} /></button>
+            </div>
+          ))}
         </div>
         {selectedClassId && (
           <div className="flex-1 overflow-y-auto">
-            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><Users size={12} className="inline mr-1"/> Students</span><button onClick={async ()=>{const n = prompt("Name:"); if(n) { const { error } = await supabase.from('students').insert([{name:n, class_id:selectedClassId, school_id: school.id, admission_no:`ADM-${Math.floor(Math.random()*9999)}`}]); if(error) alert(error.message); else await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
-            <div className="space-y-1 mb-6">{students.map(s => (<div key={s.id} className="flex items-center justify-between group"><button onClick={()=>selectStu(s)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedStudent?.id === s.id ? 'bg-indigo-500' : 'hover:bg-white/5'}`}>{s.name}</button><button onClick={async ()=>{if(window.confirm("Delete Student?")){await supabase.from('students').delete().eq('id', s.id); await loadClass(selectedClassId);}}} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14}/></button></div>))}</div>
-            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400"><span><BookOpen size={12} className="inline mr-1"/> Subjects</span><button onClick={async ()=>{const n = prompt("Subject Name:"); if(n) { const { error } = await supabase.from('subjects').insert([{name:n, class_id:selectedClassId}]); if(error) alert(error.message); else await loadClass(selectedClassId);}}}><Plus size={14}/></button></div>
-            <div className="space-y-1">{subjects.map(sub => (<div key={sub.id} className="flex items-center justify-between group p-2 rounded-lg hover:bg-white/5 text-sm"><span>{sub.name}</span><button onClick={async ()=>{if(window.confirm("Delete Subject?")){await supabase.from('subjects').delete().eq('id', sub.id); await loadClass(selectedClassId);}}} className="opacity-0 group-hover:opacity-100 text-red-400"><Trash2 size={14}/></button></div>))}</div>
+            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400">
+              <span><Users size={12} className="inline mr-1" /> Students</span>
+              <button onClick={async () => { const n = prompt("Name:"); if (n) { const { error } = await supabase.from('students').insert([{ name: n, class_id: selectedClassId, school_id: school.id, admission_no: `ADM-${Math.floor(Math.random() * 9999)}` }]); if (error) alert(error.message); else await loadClass(selectedClassId); } }}><Plus size={14} /></button>
+            </div>
+            <div className="space-y-1 mb-6">
+              {students.map(s => (
+                <div key={s.id} className="flex items-center justify-between group">
+                  <button onClick={() => selectStu(s)} className={`flex-1 text-left p-2 rounded-lg text-sm ${selectedStudent?.id === s.id ? 'bg-indigo-500' : 'hover:bg-white/5'}`}>{s.name}</button>
+                  <button onClick={async () => { if (window.confirm("Delete Student?")) { await supabase.from('students').delete().eq('id', s.id); await loadClass(selectedClassId); } }} className="opacity-0 group-hover:opacity-100 p-2 text-red-400"><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between items-center mb-2 text-[10px] font-black uppercase text-indigo-400">
+              <span><BookOpen size={12} className="inline mr-1" /> Subjects</span>
+              <button onClick={async () => { const n = prompt("Subject Name:"); if (n) { const { error } = await supabase.from('subjects').insert([{ name: n, class_id: selectedClassId }]); if (error) alert(error.message); else await loadClass(selectedClassId); } }}><Plus size={14} /></button>
+            </div>
+            <div className="space-y-1">
+              {subjects.map(sub => (
+                <div key={sub.id} className="flex items-center justify-between group p-2 rounded-lg hover:bg-white/5 text-sm">
+                  <span>{sub.name}</span>
+                  <button onClick={async () => { if (window.confirm("Delete Subject?")) { await supabase.from('subjects').delete().eq('id', sub.id); await loadClass(selectedClassId); } }} className="opacity-0 group-hover:opacity-100 text-red-400"><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
+
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <div className="p-6 bg-white border-b flex items-center gap-4">
-          <button onClick={()=>setSide(true)} className="lg:hidden"><Menu/></button>
+          <button onClick={() => setSide(true)} className="lg:hidden"><Menu /></button>
           <div className="flex-1 text-indigo-900 font-bold uppercase tracking-widest text-sm">{school?.name || "Institution..."}</div>
-          <button onClick={downloadWholeSchoolZip} disabled={isZipping} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter flex items-center gap-2">{isZipping ? <Loader2 className="animate-spin" size={14}/> : <Archive size={14}/>} {isZipping ? 'Generating...' : 'Download ZIP'}</button>
-          {selectedStudent && (<div className="flex gap-2"><button onClick={()=>setPreview('mid')} className="bg-slate-100 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Mid Preview</button><button onClick={()=>setPreview('full')} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Full Preview</button><button onClick={saveResults} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold">Save</button></div>)}
+          <button onClick={downloadWholeSchoolZip} disabled={isZipping} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter flex items-center gap-2">
+            {isZipping ? <Loader2 className="animate-spin" size={14} /> : <Archive size={14} />}
+            {isZipping ? 'Generating...' : 'Download ZIP'}
+          </button>
+          {selectedStudent && (
+            <div className="flex gap-2">
+              <button onClick={() => setPreview('mid')} className="bg-slate-100 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Mid Preview</button>
+              <button onClick={() => setPreview('full')} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Full Preview</button>
+              <button onClick={saveResults} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold">Save</button>
+            </div>
+          )}
         </div>
+
         <div className="flex-1 overflow-y-auto p-8">
-            {selectedStudent ? (
-                <div className="max-w-4xl mx-auto space-y-8">
-                    <div className="flex gap-8 border-b">{['scores', 'traits'].map(t => <button key={t} onClick={()=>setTab(t)} className={`pb-4 font-black uppercase text-xs tracking-widest ${tab===t ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>{t}</button>)}</div>
-                    {tab==='scores' && (<div className="bg-white p-8 rounded-3xl border shadow-sm"><table className="w-full text-left"><thead className="text-[10px] font-black uppercase text-slate-400 border-b"><tr><th className="pb-4">Subject</th><th className="pb-4">CA (40%)</th><th className="pb-4">Exam (60%)</th><th className="pb-4">Total</th></tr></thead><tbody>{subjects.map(sub => (<tr key={sub.id} className="border-b last:border-0"><td className="py-5 font-bold text-slate-700">{sub.name}</td><td><input type="number" className="w-24 border-2 rounded-xl p-2 focus:border-indigo-500 outline-none" value={scores[sub.id]?.ca || ''} onChange={(e)=>setScores({...scores, [sub.id]: {...(scores[sub.id]||{}), ca: e.target.value}})} /></td><td><input type="number" className="w-24 border-2 rounded-xl p-2 focus:border-indigo-500 outline-none" value={scores[sub.id]?.exam || ''} onChange={(e)=>setScores({...scores, [sub.id]: {...(scores[sub.id]||{}), exam: e.target.value}})} /></td><td className="font-black text-indigo-600">{(parseFloat(scores[sub.id]?.ca)||0) + (parseFloat(scores[sub.id]?.exam)||0)}</td></tr>))}</tbody></table></div>)}
-                    {tab==='traits' && (<div className="space-y-6"><div className="grid grid-cols-3 gap-4"><div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">School Opened</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.total_days || ''} onChange={(e)=>setCommentData({...commentData, total_days: e.target.value})} /></div><div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Present</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.present || ''} onChange={(e)=>setCommentData({...commentData, present: e.target.value})} /></div><div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Absent</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.absent || ''} onChange={(e)=>setCommentData({...commentData, absent: e.target.value})} /></div></div><div className="grid grid-cols-2 gap-4">{BEHAVIORS.map(b => (<div key={b} className="p-4 bg-white rounded-2xl border flex justify-between items-center"><span className="text-xs font-black text-slate-500 uppercase">{b}</span><select className="border-2 rounded-xl p-1 font-bold outline-none focus:border-indigo-500" value={commentData.behaviors?.[b] || ''} onChange={(e)=>setCommentData({...commentData, behaviors: {...(commentData.behaviors||{}), [b]: e.target.value}})}><option value="">-</option>{RATINGS.map(r=><option key={r} value={r}>{r}</option>)}</select></div>))}</div><textarea className="w-full p-6 border-2 rounded-3xl h-32 outline-none focus:border-indigo-500" placeholder="Form Tutor Remark..." value={commentData.tutor_comment || ''} onChange={(e)=>setCommentData({...commentData, tutor_comment: e.target.value})} /></div>)}
+          {selectedStudent ? (
+            <div className="max-w-4xl mx-auto space-y-8">
+              <div className="flex gap-8 border-b">
+                {['scores', 'traits'].map(t => (
+                  <button key={t} onClick={() => setTab(t)} className={`pb-4 font-black uppercase text-xs tracking-widest ${tab === t ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>{t}</button>
+                ))}
+              </div>
+              {tab === 'scores' && (
+                <div className="bg-white p-8 rounded-3xl border shadow-sm">
+                  <table className="w-full text-left">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b">
+                      <tr><th className="pb-4">Subject</th><th className="pb-4">CA (40%)</th><th className="pb-4">Exam (60%)</th><th className="pb-4">Total</th></tr>
+                    </thead>
+                    <tbody>
+                      {subjects.map(sub => (
+                        <tr key={sub.id} className="border-b last:border-0">
+                          <td className="py-5 font-bold text-slate-700">{sub.name}</td>
+                          <td><input type="number" className="w-24 border-2 rounded-xl p-2 focus:border-indigo-500 outline-none" value={scores[sub.id]?.ca || ''} onChange={(e) => setScores({ ...scores, [sub.id]: { ...(scores[sub.id] || {}), ca: e.target.value } })} /></td>
+                          <td><input type="number" className="w-24 border-2 rounded-xl p-2 focus:border-indigo-500 outline-none" value={scores[sub.id]?.exam || ''} onChange={(e) => setScores({ ...scores, [sub.id]: { ...(scores[sub.id] || {}), exam: e.target.value } })} /></td>
+                          <td className="font-black text-indigo-600">{(parseFloat(scores[sub.id]?.ca) || 0) + (parseFloat(scores[sub.id]?.exam) || 0)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-            ) : (<div className="h-full flex flex-col items-center justify-center text-slate-300"><CheckCircle size={80} className="mb-4 opacity-10"/><p className="font-black uppercase tracking-widest text-sm">Select a student</p></div>)}
+              )}
+              {tab === 'traits' && (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">School Opened</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.total_days || ''} onChange={(e) => setCommentData({ ...commentData, total_days: e.target.value })} /></div>
+                    <div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Present</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.present || ''} onChange={(e) => setCommentData({ ...commentData, present: e.target.value })} /></div>
+                    <div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Absent</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.absent || ''} onChange={(e) => setCommentData({ ...commentData, absent: e.target.value })} /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {BEHAVIORS.map(b => (
+                      <div key={b} className="p-4 bg-white rounded-2xl border flex justify-between items-center">
+                        <span className="text-xs font-black text-slate-500 uppercase">{b}</span>
+                        <select className="border-2 rounded-xl p-1 font-bold outline-none focus:border-indigo-500" value={commentData.behaviors?.[b] || ''} onChange={(e) => setCommentData({ ...commentData, behaviors: { ...(commentData.behaviors || {}), [b]: e.target.value } })}>
+                          <option value="">-</option>{RATINGS.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                  <textarea className="w-full p-6 border-2 rounded-3xl h-32 outline-none focus:border-indigo-500" placeholder="Form Tutor Remark..." value={commentData.tutor_comment || ''} onChange={(e) => setCommentData({ ...commentData, tutor_comment: e.target.value })} />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-slate-300">
+              <CheckCircle size={80} className="mb-4 opacity-10" />
+              <p className="font-black uppercase tracking-widest text-sm">Select a student</p>
+            </div>
+          )}
         </div>
       </div>
-      {preview && (<div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col p-4 backdrop-blur-md"><div className="bg-white p-4 flex justify-between rounded-t-3xl border-b shadow-xl"><button onClick={()=>setPreview(null)} className="text-red-500 font-black flex items-center gap-2"><X size={20}/> CLOSE</button><PDFDownloadLink document={<ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} />} fileName={`${selectedStudent?.name}_Result.pdf`} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs">Download</PDFDownloadLink></div><PDFViewer className="flex-1 rounded-b-3xl border-none"><ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} /></PDFViewer></div>)}
+
+      {preview && (
+        <div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col p-4 backdrop-blur-md">
+          <div className="bg-white p-4 flex justify-between rounded-t-3xl border-b shadow-xl">
+            <button onClick={() => setPreview(null)} className="text-red-500 font-black flex items-center gap-2"><X size={20} /> CLOSE</button>
+            <PDFDownloadLink
+              document={<ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} termLabel={TERM_LABELS[term]} />}
+              fileName={`${selectedStudent?.name}_${TERM_LABELS[term]}_Result.pdf`}
+              className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs"
+            >Download</PDFDownloadLink>
+          </div>
+          <PDFViewer className="flex-1 rounded-b-3xl border-none">
+            <ResultPDF school={school} student={selectedStudent} results={currentResults} comments={commentData} type={preview} termLabel={TERM_LABELS[term]} />
+          </PDFViewer>
+        </div>
+      )}
     </div>
   );
 };
 
 // ==================== ADMIN DASHBOARD ====================
 const AdminDashboard = () => {
+  const { term } = useTerm();
   const [school, setSchool] = useState({});
   const [tab, setTab] = useState('review');
   const [students, setStudents] = useState([]);
@@ -323,20 +470,23 @@ const AdminDashboard = () => {
   useEffect(() => { load(); }, [load]);
 
   const approve = async () => {
-    await supabase.from('comments').update({ submission_status: 'approved', principal_comment: commentData.principal_comment }).eq('student_id', selectedStudent.id);
+    await supabase.from('comments')
+      .update({ submission_status: 'approved', principal_comment: commentData.principal_comment })
+      .eq('student_id', selectedStudent.id)
+      .eq('term', term);
     alert("Approved!"); setSelectedStudent(null); await load();
   };
 
   const onLogoUpload = async (e) => {
-    const file = e.target.files[0]; if(!file) return;
+    const file = e.target.files[0]; if (!file) return;
     setLoading(true);
     try {
-        const path = `logo-${Date.now()}`;
-        const { data, error } = await supabase.storage.from('school-logos').upload(path, file);
-        if(error) throw error;
-        const { data: { publicUrl } } = supabase.storage.from('school-logos').getPublicUrl(data.path);
-        await supabase.from('schools').update({ logo_url: publicUrl }).eq('id', school.id);
-        await load();
+      const path = `logo-${Date.now()}`;
+      const { data, error } = await supabase.storage.from('school-logos').upload(path, file);
+      if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage.from('school-logos').getPublicUrl(data.path);
+      await supabase.from('schools').update({ logo_url: publicUrl }).eq('id', school.id);
+      await load();
     } catch (e) { alert(e.message); }
     setLoading(false);
   };
@@ -344,24 +494,53 @@ const AdminDashboard = () => {
   return (
     <div className="flex h-screen bg-slate-50">
       <div className="w-64 bg-slate-900 text-white p-6 flex flex-col shrink-0">
-        <h1 className="text-xl font-black mb-10 flex items-center gap-2"><Shield className="text-indigo-400"/> ADMIN</h1>
-        <button onClick={()=>setTab('review')} className={`p-4 text-left rounded-2xl mb-2 flex items-center gap-3 font-bold ${tab==='review' ? 'bg-indigo-600' : 'hover:bg-white/5'}`}><CheckCircle size={20}/> Approvals</button>
-        <button onClick={()=>setTab('setup')} className={`p-4 text-left rounded-2xl mb-2 flex items-center gap-3 font-bold ${tab==='setup' ? 'bg-indigo-600' : 'hover:bg-white/5'}`}><School size={20}/> Profile</button>
+        <h1 className="text-xl font-black mb-10 flex items-center gap-2"><Shield className="text-indigo-400" /> ADMIN</h1>
+        <button onClick={() => setTab('review')} className={`p-4 text-left rounded-2xl mb-2 flex items-center gap-3 font-bold ${tab === 'review' ? 'bg-indigo-600' : 'hover:bg-white/5'}`}><CheckCircle size={20} /> Approvals</button>
+        <button onClick={() => setTab('setup')} className={`p-4 text-left rounded-2xl mb-2 flex items-center gap-3 font-bold ${tab === 'setup' ? 'bg-indigo-600' : 'hover:bg-white/5'}`}><School size={20} /> Profile</button>
       </div>
       <div className="flex-1 p-10 overflow-y-auto">
-        {tab === 'setup' ? (<div className="max-w-2xl bg-white p-10 rounded-3xl border mx-auto"><h2 className="text-2xl font-black mb-6">School Profile</h2><div className="space-y-4">
-          <div className="flex items-center gap-6 p-4 bg-slate-50 rounded-2xl border-2 border-dashed">
-            {school.logo_url ? <img src={school.logo_url} className="h-16 w-16 object-contain" alt="logo"/> : <School size={32}/>}
-            <label className="flex-1 cursor-pointer"><span className="flex items-center gap-2 bg-white border p-3 rounded-xl font-black text-xs uppercase justify-center">{loading ? <Loader2 className="animate-spin"/> : <><Upload size={16}/> Logo</>}</span><input type="file" className="hidden" onChange={onLogoUpload} accept="image/*" /></label>
+        {tab === 'setup' ? (
+          <div className="max-w-2xl bg-white p-10 rounded-3xl border mx-auto">
+            <h2 className="text-2xl font-black mb-6">School Profile</h2>
+            <div className="space-y-4">
+              <div className="flex items-center gap-6 p-4 bg-slate-50 rounded-2xl border-2 border-dashed">
+                {school.logo_url ? <img src={school.logo_url} className="h-16 w-16 object-contain" alt="logo" /> : <School size={32} />}
+                <label className="flex-1 cursor-pointer">
+                  <span className="flex items-center gap-2 bg-white border p-3 rounded-xl font-black text-xs uppercase justify-center">{loading ? <Loader2 className="animate-spin" /> : <><Upload size={16} /> Logo</>}</span>
+                  <input type="file" className="hidden" onChange={onLogoUpload} accept="image/*" />
+                </label>
+              </div>
+              <input className="w-full border-2 p-3 rounded-xl" placeholder="School Name" value={school.name || ''} onChange={(e) => setSchool({ ...school, name: e.target.value })} />
+              <button onClick={async () => { await supabase.from('schools').update(school).eq('id', school.id); alert("Updated!"); }} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold">Save Changes</button>
+            </div>
           </div>
-          <input className="w-full border-2 p-3 rounded-xl" placeholder="School Name" value={school.name || ''} onChange={(e)=>setSchool({...school, name: e.target.value})} />
-          <button onClick={async ()=>{await supabase.from('schools').update(school).eq('id', school.id); alert("Updated!");}} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold">Save Changes</button>
-        </div></div>) : (<div className="bg-white rounded-2xl border shadow-sm">
-            <div className="p-6 border-b font-black text-slate-700">Pending Approvals</div>
-            {students.map(s => (<div key={s.id} onClick={async () => {const { data: co } = await supabase.from('comments').select('*').eq('student_id', s.id).maybeSingle(); setSelectedStudent(s); setCommentData(co || {}); }} className="p-6 border-b hover:bg-indigo-50 cursor-pointer flex justify-between items-center transition"><div><p className="font-bold">{s.name}</p><p className="text-[10px] uppercase text-slate-400">{s.classes?.name}</p></div><span className="text-indigo-600 font-bold text-xs">Review →</span></div>))}
-          </div>)}
+        ) : (
+          <div className="bg-white rounded-2xl border shadow-sm">
+            <div className="p-6 border-b font-black text-slate-700">Pending Approvals — {TERM_LABELS[term]}</div>
+            {students.map(s => (
+              <div key={s.id} onClick={async () => {
+                const { data: co } = await supabase.from('comments').select('*').eq('student_id', s.id).eq('term', term).maybeSingle();
+                setSelectedStudent(s); setCommentData(co || {});
+              }} className="p-6 border-b hover:bg-indigo-50 cursor-pointer flex justify-between items-center transition">
+                <div><p className="font-bold">{s.name}</p><p className="text-[10px] uppercase text-slate-400">{s.classes?.name}</p></div>
+                <span className="text-indigo-600 font-bold text-xs">Review →</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      {selectedStudent && (<div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-3xl w-full max-w-xl"><h3 className="text-xl font-black mb-4">Approval: {selectedStudent.name}</h3><textarea className="w-full border-2 p-4 h-40 rounded-xl mb-6 outline-none focus:border-indigo-500" placeholder="Principal's remark..." value={commentData.principal_comment || ''} onChange={(e)=>setCommentData({...commentData, principal_comment: e.target.value})} /><div className="flex gap-4"><button onClick={approve} className="flex-1 bg-indigo-600 text-white py-4 rounded-xl font-bold uppercase text-xs">Approve & Publish</button><button onClick={()=>setSelectedStudent(null)} className="px-6 font-bold text-slate-400 uppercase text-xs">Cancel</button></div></div></div>)}
+      {selectedStudent && (
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-8 rounded-3xl w-full max-w-xl">
+            <h3 className="text-xl font-black mb-4">Approval: {selectedStudent.name}</h3>
+            <textarea className="w-full border-2 p-4 h-40 rounded-xl mb-6 outline-none focus:border-indigo-500" placeholder="Principal's remark..." value={commentData.principal_comment || ''} onChange={(e) => setCommentData({ ...commentData, principal_comment: e.target.value })} />
+            <div className="flex gap-4">
+              <button onClick={approve} className="flex-1 bg-indigo-600 text-white py-4 rounded-xl font-bold uppercase text-xs">Approve & Publish</button>
+              <button onClick={() => setSelectedStudent(null)} className="px-6 font-bold text-slate-400 uppercase text-xs">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -383,9 +562,34 @@ const CentralAdminDashboard = () => {
   };
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      <div className="flex justify-between items-center bg-slate-900 text-white p-6 rounded-2xl mb-8"><h1 className="text-2xl font-black flex items-center gap-3"><Shield className="text-indigo-400"/> GLOBAL CORE</h1></div>
-      <div className="bg-white rounded-2xl border overflow-hidden"><table className="w-full text-left"><thead className="bg-slate-50 border-b text-[10px] font-black uppercase"><tr><th className="p-4">User</th><th>School</th><th>Role</th><th>Action</th></tr></thead><tbody>{users.map(u => (<tr key={u.id} className="border-b hover:bg-slate-50"><td className="p-4 font-bold">{u.full_name}</td><td>{u.schools?.name || 'None'}</td><td><span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase">{u.role}</span></td><td><button onClick={() => setSelectedUser(u)} className="p-2 text-indigo-600"><UserCog size={18}/></button></td></tr>))}</tbody></table></div>
-      {selectedUser && (<div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-3xl w-full max-sm"><h3 className="text-lg font-black mb-6 uppercase text-center">Manage Privileges</h3><div className="space-y-4"><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.role} onChange={(e) => updateStaff(selectedUser.id, { role: e.target.value })}><option value="teacher">Teacher</option><option value="admin">School Admin</option></select><select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.school_id} onChange={(e) => updateStaff(selectedUser.id, { school_id: e.target.value })}><option value="">No School</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select><button onClick={() => setSelectedUser(null)} className="w-full py-4 text-slate-400 font-bold uppercase text-xs">Close</button></div></div></div>)}
+      <div className="flex justify-between items-center bg-slate-900 text-white p-6 rounded-2xl mb-8">
+        <h1 className="text-2xl font-black flex items-center gap-3"><Shield className="text-indigo-400" /> GLOBAL CORE</h1>
+      </div>
+      <div className="bg-white rounded-2xl border overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-slate-50 border-b text-[10px] font-black uppercase"><tr><th className="p-4">User</th><th>School</th><th>Role</th><th>Action</th></tr></thead>
+          <tbody>{users.map(u => (
+            <tr key={u.id} className="border-b hover:bg-slate-50">
+              <td className="p-4 font-bold">{u.full_name}</td>
+              <td>{u.schools?.name || 'None'}</td>
+              <td><span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase">{u.role}</span></td>
+              <td><button onClick={() => setSelectedUser(u)} className="p-2 text-indigo-600"><UserCog size={18} /></button></td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      {selectedUser && (
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-8 rounded-3xl w-full max-sm">
+            <h3 className="text-lg font-black mb-6 uppercase text-center">Manage Privileges</h3>
+            <div className="space-y-4">
+              <select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.role} onChange={(e) => updateStaff(selectedUser.id, { role: e.target.value })}><option value="teacher">Teacher</option><option value="admin">School Admin</option></select>
+              <select className="w-full border-2 p-3 rounded-xl font-bold" defaultValue={selectedUser.school_id} onChange={(e) => updateStaff(selectedUser.id, { school_id: e.target.value })}><option value="">No School</option>{schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+              <button onClick={() => setSelectedUser(null)} className="w-full py-4 text-slate-400 font-bold uppercase text-xs">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -393,41 +597,98 @@ const CentralAdminDashboard = () => {
 // ==================== PARENT PORTAL ====================
 const ParentPortal = () => {
   const [id, setId] = useState('');
+  const [termChoice, setTermChoice] = useState('term2');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const lookup = async () => {
     setLoading(true);
-    const { data: st } = await supabase.from('students').select('*, schools(*), classes(name), results(*, subjects(*)), comments(*)').eq('admission_no', id).maybeSingle();
-    if (st && st.comments?.[0]?.submission_status === 'approved') setData(st);
-    else alert("Result not approved or ID invalid.");
+    const { data: st } = await supabase
+      .from('students')
+      .select('*, schools(*), classes(name), results(*, subjects(*)), comments(*)')
+      .eq('admission_no', id)
+      .maybeSingle();
+    if (st) {
+      const termComment = st.comments?.find(c => c.term === termChoice);
+      const termResults = st.results?.filter(r => r.term === termChoice);
+      if (termComment?.submission_status === 'approved') {
+        setData({ ...st, results: termResults, comments: [termComment] });
+      } else {
+        alert("Result not approved or ID invalid.");
+      }
+    } else {
+      alert("Student not found.");
+    }
     setLoading(false);
   };
-  if (data) return (<div className="fixed inset-0 z-50 bg-white flex flex-col"><button onClick={()=>setData(null)} className="p-6 bg-slate-900 text-white font-black flex items-center gap-3 text-xs uppercase">← Back</button><PDFViewer className="flex-1 border-none"><ResultPDF school={data.schools} student={data} results={data.results} comments={data.comments[0]} type="full" /></PDFViewer></div>);
-  return (<div className="min-h-screen bg-indigo-950 flex items-center justify-center p-4"><div className="bg-white p-12 rounded-[60px] max-w-md w-full text-center"><GraduationCap size={70} className="mx-auto text-indigo-600 mb-6"/><h2 className="text-3xl font-black mb-10 text-slate-800 uppercase">Parent Portal</h2><input className="w-full border-2 p-5 rounded-[30px] mb-4 text-center font-black" placeholder="ADM-XXXX" onChange={(e)=>setId(e.target.value)} /><button onClick={lookup} className="w-full bg-indigo-600 text-white py-6 rounded-[30px] font-black uppercase text-xs">{loading ? <Loader2 className="animate-spin mx-auto"/> : 'Access Transcript'}</button></div></div>);
-};
 
-// ==================== MAIN APP (ROUTING) ====================
-const App = () => {
-  const [view, setView] = useState('teacher'); // Default view
+  if (data) return (
+    <div className="fixed inset-0 z-50 bg-white flex flex-col">
+      <button onClick={() => setData(null)} className="p-6 bg-slate-900 text-white font-black flex items-center gap-3 text-xs uppercase">← Back</button>
+      <PDFViewer className="flex-1 border-none">
+        <ResultPDF school={data.schools} student={data} results={data.results} comments={data.comments[0]} type="full" termLabel={TERM_LABELS[termChoice]} />
+      </PDFViewer>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* GLOBAL ROLE SWITCHER (Replaces Auth) */}
-      <nav className="bg-indigo-600 p-2 flex justify-center items-center gap-2 overflow-x-auto">
-        <button onClick={() => setView('teacher')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition ${view === 'teacher' ? 'bg-white text-indigo-600 shadow-md' : 'text-white hover:bg-white/10'}`}><School size={14}/> Teacher</button>
-        <button onClick={() => setView('admin')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition ${view === 'admin' ? 'bg-white text-indigo-600 shadow-md' : 'text-white hover:bg-white/10'}`}><Shield size={14}/> Admin</button>
-        <button onClick={() => setView('central')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition ${view === 'central' ? 'bg-white text-indigo-600 shadow-md' : 'text-white hover:bg-white/10'}`}><LayoutDashboard size={14}/> Global</button>
-        <button onClick={() => setView('parent')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition ${view === 'parent' ? 'bg-white text-indigo-600 shadow-md' : 'text-white hover:bg-white/10'}`}><Search size={14}/> Parent Gateway</button>
-      </nav>
-
-      {/* VIEW RENDERER */}
-      <main className="flex-1">
-        {view === 'teacher' && <TeacherDashboard />}
-        {view === 'admin' && <AdminDashboard />}
-        {view === 'central' && <CentralAdminDashboard />}
-        {view === 'parent' && <ParentPortal />}
-      </main>
+    <div className="min-h-screen bg-indigo-950 flex items-center justify-center p-4">
+      <div className="bg-white p-12 rounded-[60px] max-w-md w-full text-center">
+        <GraduationCap size={70} className="mx-auto text-indigo-600 mb-6" />
+        <h2 className="text-3xl font-black mb-10 text-slate-800 uppercase">Parent Portal</h2>
+        <input className="w-full border-2 p-5 rounded-[30px] mb-4 text-center font-black" placeholder="ADM-XXXX" onChange={(e) => setId(e.target.value)} />
+        <div className="flex gap-3 mb-6">
+          {Object.entries(TERM_LABELS).map(([key, label]) => (
+            <button key={key} onClick={() => setTermChoice(key)} className={`flex-1 py-3 rounded-[20px] font-black text-xs uppercase transition ${termChoice === key ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{label}</button>
+          ))}
+        </div>
+        <button onClick={lookup} className="w-full bg-indigo-600 text-white py-6 rounded-[30px] font-black uppercase text-xs">
+          {loading ? <Loader2 className="animate-spin mx-auto" /> : 'Access Transcript'}
+        </button>
+      </div>
     </div>
+  );
+};
+
+// ==================== TERM SWITCHER BAR ====================
+const TermSwitcher = ({ term, setTerm }) => (
+  <div className="flex items-center gap-1 bg-white/10 rounded-xl p-1">
+    {Object.entries(TERM_LABELS).map(([key, label]) => (
+      <button
+        key={key}
+        onClick={() => setTerm(key)}
+        className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition ${term === key ? 'bg-white text-indigo-700 shadow' : 'text-white/70 hover:text-white'}`}
+      >{label}</button>
+    ))}
+  </div>
+);
+
+// ==================== MAIN APP ====================
+const App = () => {
+  const [view, setView] = useState('teacher');
+  const [term, setTerm] = useState('term2');
+
+  // 💓 Supabase heartbeat — prevents free-tier auto-pause
+  useSupabaseHeartbeat();
+
+  return (
+    <TermContext.Provider value={{ term, setTerm }}>
+      <div className="min-h-screen flex flex-col">
+        <nav className="bg-indigo-600 p-2 flex flex-wrap justify-center items-center gap-2">
+          <button onClick={() => setView('teacher')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition ${view === 'teacher' ? 'bg-white text-indigo-600 shadow-md' : 'text-white hover:bg-white/10'}`}><School size={14} /> Teacher</button>
+          <button onClick={() => setView('admin')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition ${view === 'admin' ? 'bg-white text-indigo-600 shadow-md' : 'text-white hover:bg-white/10'}`}><Shield size={14} /> Admin</button>
+          <button onClick={() => setView('central')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition ${view === 'central' ? 'bg-white text-indigo-600 shadow-md' : 'text-white hover:bg-white/10'}`}><LayoutDashboard size={14} /> Global</button>
+          <button onClick={() => setView('parent')} className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 transition ${view === 'parent' ? 'bg-white text-indigo-600 shadow-md' : 'text-white hover:bg-white/10'}`}><Search size={14} /> Parent Gateway</button>
+          {/* Term switcher — hidden on parent portal since it picks its own */}
+          {view !== 'parent' && <TermSwitcher term={term} setTerm={setTerm} />}
+        </nav>
+        <main className="flex-1">
+          {view === 'teacher' && <TeacherDashboard />}
+          {view === 'admin' && <AdminDashboard />}
+          {view === 'central' && <CentralAdminDashboard />}
+          {view === 'parent' && <ParentPortal />}
+        </main>
+      </div>
+    </TermContext.Provider>
   );
 };
 
