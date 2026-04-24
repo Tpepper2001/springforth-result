@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Document, Page, Text, View, StyleSheet, PDFViewer, PDFDownloadLink, Image, pdf } from '@react-pdf/renderer';
-import { Loader2, School, Users, CheckCircle, Search, Menu, X, Upload, Shield, UserCog, Plus, BookOpen, Trash2, GraduationCap, Archive, LayoutDashboard } from 'lucide-react';
+import { Loader2, School, Users, CheckCircle, Search, Menu, X, Upload, Shield, UserCog, Plus, BookOpen, Trash2, GraduationCap, Archive, LayoutDashboard, Lock } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
@@ -11,15 +11,18 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==================== SUPABASE HEARTBEAT ====================
+// Pings every 2 minutes across multiple tables to prevent free-tier auto-pause
 const useSupabaseHeartbeat = () => {
   useEffect(() => {
     const beat = async () => {
       try {
         await supabase.from('schools').select('id').limit(1);
+        await supabase.from('students').select('id').limit(1);
+        await supabase.from('results').select('id').limit(1);
       } catch (_) {}
     };
-    beat();
-    const interval = setInterval(beat, 4 * 60 * 1000);
+    beat(); // immediate ping on mount
+    const interval = setInterval(beat, 2 * 60 * 1000); // every 2 min
     return () => clearInterval(interval);
   }, []);
 };
@@ -213,6 +216,9 @@ const TeacherDashboard = () => {
   const [side, setSide] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
 
+  // 🔒 2nd Term is read-only — editing is only allowed for 3rd Term
+  const isLocked = term === 'term2';
+
   const init = useCallback(async () => {
     const { data: schools } = await supabase.from('schools').select('*').limit(1);
     if (!schools || schools.length === 0) return;
@@ -223,7 +229,6 @@ const TeacherDashboard = () => {
 
   useEffect(() => { init(); }, [init]);
 
-  // selectStu as useCallback so the term-reload effect can list it as a dependency
   const selectStu = useCallback(async (s) => {
     setSelectedStudent(s); setSide(false);
     const { data: rs } = await supabase.from('results').select('*, subjects(name)').eq('student_id', s.id).eq('term', term);
@@ -244,7 +249,7 @@ const TeacherDashboard = () => {
   useEffect(() => {
     if (selectedStudent) selectStu(selectedStudent);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [term]); // intentionally only re-runs on term change, not on every selectStu/selectedStudent update
+  }, [term]);
 
   const loadClass = async (id) => {
     setSelectedClassId(id);
@@ -254,6 +259,7 @@ const TeacherDashboard = () => {
   };
 
   const saveResults = async () => {
+    if (isLocked) return;
     try {
       const ups = subjects.map(s => {
         const sc = scores[s.id] || { ca: 0, exam: 0 };
@@ -310,6 +316,7 @@ const TeacherDashboard = () => {
 
   return (
     <div className="flex h-screen bg-slate-50">
+      {/* ── Sidebar ── */}
       <div className={`fixed lg:static inset-y-0 left-0 w-72 bg-indigo-950 text-white p-6 transition-transform z-40 flex flex-col ${side ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="flex justify-between items-center mb-4 shrink-0">
           <h1 className="text-xl font-black text-indigo-300 flex items-center gap-2"><School /> TEACHER</h1>
@@ -357,7 +364,9 @@ const TeacherDashboard = () => {
         )}
       </div>
 
+      {/* ── Main content ── */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
+        {/* Top bar */}
         <div className="p-6 bg-white border-b flex items-center gap-4">
           <button onClick={() => setSide(true)} className="lg:hidden"><Menu /></button>
           <div className="flex-1 text-indigo-900 font-bold uppercase tracking-widest text-sm">{school?.name || "Institution..."}</div>
@@ -369,7 +378,10 @@ const TeacherDashboard = () => {
             <div className="flex gap-2">
               <button onClick={() => setPreview('mid')} className="bg-slate-100 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Mid Preview</button>
               <button onClick={() => setPreview('full')} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-tighter">Full Preview</button>
-              <button onClick={saveResults} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold">Save</button>
+              {/* Save is hidden entirely when locked */}
+              {!isLocked && (
+                <button onClick={saveResults} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold">Save</button>
+              )}
             </div>
           )}
         </div>
@@ -377,11 +389,22 @@ const TeacherDashboard = () => {
         <div className="flex-1 overflow-y-auto p-8">
           {selectedStudent ? (
             <div className="max-w-4xl mx-auto space-y-8">
+
+              {/* 🔒 Lock banner */}
+              {isLocked && (
+                <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 text-amber-700 px-5 py-3 rounded-2xl">
+                  <Lock size={15} className="shrink-0" />
+                  <p className="text-xs font-black uppercase tracking-wider">2nd Term is locked — results are read-only. Switch to 3rd Term to enter new scores.</p>
+                </div>
+              )}
+
               <div className="flex gap-8 border-b">
                 {['scores', 'traits'].map(t => (
                   <button key={t} onClick={() => setTab(t)} className={`pb-4 font-black uppercase text-xs tracking-widest ${tab === t ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>{t}</button>
                 ))}
               </div>
+
+              {/* ── Scores tab ── */}
               {tab === 'scores' && (
                 <div className="bg-white p-8 rounded-3xl border shadow-sm">
                   <table className="w-full text-left">
@@ -392,8 +415,24 @@ const TeacherDashboard = () => {
                       {subjects.map(sub => (
                         <tr key={sub.id} className="border-b last:border-0">
                           <td className="py-5 font-bold text-slate-700">{sub.name}</td>
-                          <td><input type="number" className="w-24 border-2 rounded-xl p-2 focus:border-indigo-500 outline-none" value={scores[sub.id]?.ca || ''} onChange={(e) => setScores({ ...scores, [sub.id]: { ...(scores[sub.id] || {}), ca: e.target.value } })} /></td>
-                          <td><input type="number" className="w-24 border-2 rounded-xl p-2 focus:border-indigo-500 outline-none" value={scores[sub.id]?.exam || ''} onChange={(e) => setScores({ ...scores, [sub.id]: { ...(scores[sub.id] || {}), exam: e.target.value } })} /></td>
+                          <td>
+                            <input
+                              type="number"
+                              disabled={isLocked}
+                              className={`w-24 border-2 rounded-xl p-2 outline-none transition ${isLocked ? 'bg-slate-50 text-slate-400 cursor-not-allowed border-slate-200' : 'focus:border-indigo-500'}`}
+                              value={scores[sub.id]?.ca || ''}
+                              onChange={(e) => { if (!isLocked) setScores({ ...scores, [sub.id]: { ...(scores[sub.id] || {}), ca: e.target.value } }); }}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              disabled={isLocked}
+                              className={`w-24 border-2 rounded-xl p-2 outline-none transition ${isLocked ? 'bg-slate-50 text-slate-400 cursor-not-allowed border-slate-200' : 'focus:border-indigo-500'}`}
+                              value={scores[sub.id]?.exam || ''}
+                              onChange={(e) => { if (!isLocked) setScores({ ...scores, [sub.id]: { ...(scores[sub.id] || {}), exam: e.target.value } }); }}
+                            />
+                          </td>
                           <td className="font-black text-indigo-600">{(parseFloat(scores[sub.id]?.ca) || 0) + (parseFloat(scores[sub.id]?.exam) || 0)}</td>
                         </tr>
                       ))}
@@ -401,24 +440,53 @@ const TeacherDashboard = () => {
                   </table>
                 </div>
               )}
+
+              {/* ── Traits tab ── */}
               {tab === 'traits' && (
                 <div className="space-y-6">
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">School Opened</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.total_days || ''} onChange={(e) => setCommentData({ ...commentData, total_days: e.target.value })} /></div>
-                    <div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Present</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.present || ''} onChange={(e) => setCommentData({ ...commentData, present: e.target.value })} /></div>
-                    <div className="bg-white p-4 rounded-2xl border flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-2">Times Absent</span><input type="number" className="border-2 rounded-xl p-2 outline-none focus:border-indigo-500 font-bold" value={commentData.absent || ''} onChange={(e) => setCommentData({ ...commentData, absent: e.target.value })} /></div>
+                    {[
+                      { label: 'School Opened', key: 'total_days' },
+                      { label: 'Times Present', key: 'present' },
+                      { label: 'Times Absent',  key: 'absent'     },
+                    ].map(({ label, key }) => (
+                      <div key={key} className="bg-white p-4 rounded-2xl border flex flex-col">
+                        <span className="text-[10px] font-black text-slate-400 uppercase mb-2">{label}</span>
+                        <input
+                          type="number"
+                          disabled={isLocked}
+                          className={`border-2 rounded-xl p-2 outline-none font-bold transition ${isLocked ? 'bg-slate-50 text-slate-400 cursor-not-allowed border-slate-200' : 'focus:border-indigo-500'}`}
+                          value={commentData[key] || ''}
+                          onChange={(e) => { if (!isLocked) setCommentData({ ...commentData, [key]: e.target.value }); }}
+                        />
+                      </div>
+                    ))}
                   </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     {BEHAVIORS.map(b => (
                       <div key={b} className="p-4 bg-white rounded-2xl border flex justify-between items-center">
                         <span className="text-xs font-black text-slate-500 uppercase">{b}</span>
-                        <select className="border-2 rounded-xl p-1 font-bold outline-none focus:border-indigo-500" value={commentData.behaviors?.[b] || ''} onChange={(e) => setCommentData({ ...commentData, behaviors: { ...(commentData.behaviors || {}), [b]: e.target.value } })}>
-                          <option value="">-</option>{RATINGS.map(r => <option key={r} value={r}>{r}</option>)}
+                        <select
+                          disabled={isLocked}
+                          className={`border-2 rounded-xl p-1 font-bold outline-none transition ${isLocked ? 'bg-slate-50 text-slate-400 cursor-not-allowed border-slate-200' : 'focus:border-indigo-500'}`}
+                          value={commentData.behaviors?.[b] || ''}
+                          onChange={(e) => { if (!isLocked) setCommentData({ ...commentData, behaviors: { ...(commentData.behaviors || {}), [b]: e.target.value } }); }}
+                        >
+                          <option value="">-</option>
+                          {RATINGS.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
                       </div>
                     ))}
                   </div>
-                  <textarea className="w-full p-6 border-2 rounded-3xl h-32 outline-none focus:border-indigo-500" placeholder="Form Tutor Remark..." value={commentData.tutor_comment || ''} onChange={(e) => setCommentData({ ...commentData, tutor_comment: e.target.value })} />
+
+                  <textarea
+                    disabled={isLocked}
+                    className={`w-full p-6 border-2 rounded-3xl h-32 outline-none transition ${isLocked ? 'bg-slate-50 text-slate-400 cursor-not-allowed border-slate-200 resize-none' : 'focus:border-indigo-500'}`}
+                    placeholder={isLocked ? 'Locked — switch to 3rd Term to edit remarks' : 'Form Tutor Remark...'}
+                    value={commentData.tutor_comment || ''}
+                    onChange={(e) => { if (!isLocked) setCommentData({ ...commentData, tutor_comment: e.target.value }); }}
+                  />
                 </div>
               )}
             </div>
@@ -431,6 +499,7 @@ const TeacherDashboard = () => {
         </div>
       </div>
 
+      {/* ── PDF Preview modal ── */}
       {preview && (
         <div className="fixed inset-0 z-50 bg-slate-900/90 flex flex-col p-4 backdrop-blur-md">
           <div className="bg-white p-4 flex justify-between rounded-t-3xl border-b shadow-xl">
@@ -657,8 +726,11 @@ const TermSwitcher = ({ term, setTerm }) => (
       <button
         key={key}
         onClick={() => setTerm(key)}
-        className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition ${term === key ? 'bg-white text-indigo-700 shadow' : 'text-white/70 hover:text-white'}`}
-      >{label}</button>
+        className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition flex items-center gap-1.5 ${term === key ? 'bg-white text-indigo-700 shadow' : 'text-white/70 hover:text-white'}`}
+      >
+        {key === 'term2' && <Lock size={10} />}
+        {label}
+      </button>
     ))}
   </div>
 );
@@ -668,6 +740,7 @@ const App = () => {
   const [view, setView] = useState('teacher');
   const [term, setTerm] = useState('term2');
 
+  // 💓 Supabase heartbeat — prevents free-tier auto-pause
   useSupabaseHeartbeat();
 
   return (
